@@ -3,9 +3,11 @@ import { money } from './api.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 
-export function mountChart(container, { candles, ind, levels = [], bars = 126 }) {
+// opts.paths:   [{ series (aligned with candles, null = gap), cls }] extra lines, e.g. a trailing stop
+// opts.markers: [{ i (candle index), price, label, tone: 'buy'|'sell'|'stop'|'warn' }]
+export function mountChart(container, { candles, ind, levels = [], bars = 126, paths = [], markers = [] }) {
   const state = { bars };
-  const draw = () => render(container, candles, ind, levels, state.bars);
+  const draw = () => render(container, candles, ind, levels, state.bars, paths, markers);
   const ro = new ResizeObserver(() => draw());
   ro.observe(container);
   draw();
@@ -15,7 +17,7 @@ export function mountChart(container, { candles, ind, levels = [], bars = 126 })
   };
 }
 
-function render(container, candles, ind, levels, bars) {
+function render(container, candles, ind, levels, bars, paths = [], markers = []) {
   const width = Math.max(320, container.clientWidth);
   const priceH = width < 560 ? 260 : 340;
   const rsiH = 90, gap = 18, padL = 8, padR = 64, padT = 10;
@@ -31,6 +33,7 @@ function render(container, candles, ind, levels, bars) {
     // Only stretch the axis for levels reasonably close to the visible range.
     if (l.price > lo * 0.85 && l.price < hi * 1.15) { lo = Math.min(lo, l.price); hi = Math.max(hi, l.price); }
   }
+  for (const p of paths) for (let i = start; i < n; i++) if (p.series[i] != null) { lo = Math.min(lo, p.series[i]); hi = Math.max(hi, p.series[i]); }
   const padP = (hi - lo) * 0.06;
   lo -= padP; hi += padP;
 
@@ -88,6 +91,25 @@ function render(container, candles, ind, levels, bars) {
     return d ? `<path class="ma ${cls}" d="${d}"/>` : '';
   };
   html += line(ind.sma20, 'ma20') + line(ind.sma50, 'ma50') + line(ind.sma200, 'ma200');
+  for (const p of paths) {
+    // Step line: holds each value until the next day.
+    let d = '';
+    for (let i = start; i < n; i++) {
+      const v = p.series[i];
+      if (v == null) continue;
+      const x0 = x(i) - step / 2, x1 = x(i) + step / 2;
+      d += `${d && p.series[i - 1] != null && i > start ? 'L' : 'M'}${x0.toFixed(1)},${y(v).toFixed(1)}L${x1.toFixed(1)},${y(v).toFixed(1)}`;
+    }
+    if (d) html += `<path class="path ${p.cls}" d="${d}"/>`;
+  }
+  for (const m of markers) {
+    if (m.i < start || m.price < lo || m.price > hi) continue;
+    const mx = x(m.i), my = y(m.price);
+    const up = m.tone === 'buy';
+    const tri = up ? `${mx},${my + 3} ${mx - 6},${my + 13} ${mx + 6},${my + 13}` : `${mx},${my - 3} ${mx - 6},${my - 13} ${mx + 6},${my - 13}`;
+    html += `<polygon class="marker ${m.tone}" points="${tri}"><title>${m.title || m.label}</title></polygon>`;
+    if (m.label) html += `<text class="marker-label ${m.tone}" x="${mx}" y="${up ? my + 25 : my - 17}" text-anchor="middle">${m.label}</text>`;
+  }
   // trade levels
   for (const l of levels) {
     if (l.price < lo || l.price > hi) continue;
