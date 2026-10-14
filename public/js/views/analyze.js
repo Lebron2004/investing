@@ -1,4 +1,4 @@
-import { getAnalysis, settings, money, pct, num, shares, toneOf, esc, badge, scoreBar, demoNotice } from '../api.js';
+import { getAnalysis, settings, money, pct, num, shares, toneOf, esc, badge, scoreBar, demoNotice, gradeChips, bigMoney } from '../api.js';
 import { positionSize, sellPlan, RISK_PROFILES } from '../lib/sizing.js';
 import { mountChart } from '../chart.js';
 import { getWatchlist, toggleWatch } from './watchlist.js';
@@ -61,14 +61,16 @@ export async function renderAnalyze(app, symbol) {
 
     <div class="grid-2">
       <section class="card">
-        <div class="card-head"><h2>Short-term <span class="muted small">days to weeks</span></h2>${badge(a.shortTerm)}</div>
+        <div class="card-head"><h2>Short-term buy? <span class="muted small">days to weeks</span></h2>${badge(a.shortTerm)}</div>
         <div class="score-row">${scoreBar(a.shortTerm.score)}</div>
+        ${setupBlock(a)}
         <ul class="reasons">${reasons(a.shortTerm)}</ul>
       </section>
       <section class="card">
-        <div class="card-head"><h2>Long-term <span class="muted small">months to years</span></h2>${badge(a.longTerm)}</div>
+        <div class="card-head"><h2>Long-term buy? <span class="muted small">${esc(a.longTerm.hold)}</span></h2>${badge(a.longTerm)}</div>
         <div class="score-row">${scoreBar(a.longTerm.score)}</div>
-        <ul class="reasons">${reasons(a.longTerm)}</ul>
+        ${ltBreakdown(a)}
+        ${groupedReasons(a.longTerm.reasons)}
       </section>
     </div>
 
@@ -130,7 +132,8 @@ export async function renderAnalyze(app, symbol) {
           <dt>Worst drop (1y)</dt><dd class="down">${pct(a.maxDrawdown)}</dd>
         </dl>
       </section>
-    </div>`;
+    </div>
+    ${fundamentalsCard(a)}`;
 
   const levels = [
     { price: a.plan.buyZone[0], label: 'Buy', tone: 'buy' },
@@ -150,4 +153,64 @@ export async function renderAnalyze(app, symbol) {
     e.target.classList.toggle('ghost', on);
   });
   return () => chart.destroy();
+}
+
+function reasonItems(list) {
+  return list.map((x) => `<li class="${toneOf(x.points)}"><span class="pts">${x.points > 0 ? '+' : x.points < 0 ? '' : '·'}${x.points || ''}</span>${esc(x.text)}</li>`).join('');
+}
+
+function groupedReasons(list) {
+  const groups = [...new Set(list.map((r) => r.group || 'Trend'))];
+  return groups.map((g) => `<h4 class="reason-group">${esc(g)}</h4><ul class="reasons">${reasonItems(list.filter((r) => (r.group || 'Trend') === g))}</ul>`).join('');
+}
+
+function setupBlock(a) {
+  const st = a.shortTerm, s = st.setup;
+  const earnings = a.daysToEarnings != null && a.daysToEarnings <= 14
+    ? `<p class="notice warn small">⚠ Earnings in ${a.daysToEarnings} day${a.daysToEarnings === 1 ? '' : 's'}. Stocks often jump or drop 5–15% on earnings. Many traders wait until after the report or use a smaller position.</p>` : '';
+  const rs = a.rs3m != null ? `<span class="pill ${a.rs3m >= 0 ? 'up' : 'down'}">${a.rs3m >= 0 ? 'Beating' : 'Lagging'} the S&amp;P 500 by ${pct(Math.abs(a.rs3m))} (3 mo)</span>` : '';
+  return `${s
+    ? `<div class="setup"><span class="setup-tag setup-${s.key}">${esc(s.label)}</span><div><strong>Setup found:</strong> ${esc(s.text)}.<div class="muted small">${esc(s.howTo)} Typical hold: ${esc(s.hold)}.</div></div></div>`
+    : '<div class="setup none"><span class="setup-tag">No setup</span><div class="muted small">No clean breakout, pullback, bounce or momentum pattern right now. Waiting for one usually beats forcing a trade.</div></div>'}
+    <div class="pill-row">${rs}</div>${earnings}`;
+}
+
+function ltBreakdown(a) {
+  const lt = a.longTerm;
+  if (lt.fundScore == null) {
+    return '<p class="muted small">Company fundamentals aren\'t available for this symbol (ETFs don\'t have them), so this score is based on the price trend only.</p>';
+  }
+  return `<div class="split">
+      <div><span class="label">Price trend</span>${scoreBar(lt.trendScore)}</div>
+      <div><span class="label">Business fundamentals</span>${scoreBar(lt.fundScore)}</div>
+    </div>
+    ${gradeChips(lt.grades)}
+    ${lt.upside != null ? `<p class="small">Analysts' average target: <strong>${money(a.fundamentals.targetMean)}</strong> (<span class="${toneOf(lt.upside)}">${pct(lt.upside, 1, true)}</span>)</p>` : ''}`;
+}
+
+function fundamentalsCard(a) {
+  const f = a.fundamentals;
+  if (!f) return '';
+  const row = (label, value, hint = '', tone = '') => `<div class="metric"><span class="label">${label}</span><span class="value ${tone}">${value}</span>${hint ? `<span class="sub">${hint}</span>` : ''}</div>`;
+  const pe = f.forwardPE ?? f.trailingPE;
+  const earn = f.nextEarnings ? new Date(f.nextEarnings).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+  return `<section class="card">
+    <div class="card-head"><h2>The business${f.industry ? ` <span class="muted small">${esc(f.industry)}</span>` : ''}</h2>${f.source === 'demo' ? '<span class="badge flat">Simulated</span>' : ''}</div>
+    ${f.summary ? `<p class="muted">${esc(f.summary)}</p>` : ''}
+    <div class="metrics">
+      ${row('Company size', bigMoney(f.marketCap), 'market value')}
+      ${row('P/E ratio', pe ? `${pe.toFixed(1)}×` : 'n/a', f.forwardPE ? 'price ÷ next year\'s earnings' : 'price ÷ last year\'s earnings', pe && pe < 25 ? 'up' : pe > 40 ? 'down' : '')}
+      ${row('PEG ratio', f.peg ? f.peg.toFixed(2) : '—', 'P/E ÷ growth; under 1.5 is cheap', f.peg && f.peg < 1.5 ? 'up' : f.peg > 3 ? 'down' : '')}
+      ${row('Revenue growth', f.revenueGrowth != null ? pct(f.revenueGrowth, 1, true) : '—', 'vs. a year ago', toneOf(f.revenueGrowth))}
+      ${row('Earnings growth', f.earningsGrowth != null ? pct(f.earningsGrowth, 1, true) : '—', 'vs. a year ago', toneOf(f.earningsGrowth))}
+      ${row('Profit margin', f.profitMargin != null ? pct(f.profitMargin) : '—', 'profit per $1 of sales', toneOf(f.profitMargin))}
+      ${row('Return on equity', f.roe != null ? pct(f.roe) : '—', 'profit on shareholders\' money', toneOf(f.roe))}
+      ${row('Debt / equity', f.debtToEquity != null ? `${(f.debtToEquity / 100).toFixed(2)}×` : '—', 'under 1× is comfortable', f.debtToEquity > 200 ? 'down' : f.debtToEquity != null && f.debtToEquity < 100 ? 'up' : '')}
+      ${row('Dividend yield', f.dividendYield ? pct(f.dividendYield, 2) : 'None', 'cash paid yearly')}
+      ${row('Beta', f.beta != null ? f.beta.toFixed(2) : '—', f.beta > 1.3 ? 'swings more than the market' : f.beta != null && f.beta < 0.8 ? 'calmer than the market' : 'moves with the market')}
+      ${row('Analyst target', f.targetMean ? money(f.targetMean) : '—', f.targetLow && f.targetHigh ? `range ${money(f.targetLow, 0)}–${money(f.targetHigh, 0)}` : '', toneOf(a.longTerm.upside))}
+      ${row('Next earnings', earn, a.daysToEarnings != null ? `in ${a.daysToEarnings} days` : '')}
+    </div>
+    <p class="muted small">Company data from Yahoo Finance, updated daily. Fundamentals tell you <em>what</em> to own. The trend and setup tell you <em>when</em>.</p>
+  </section>`;
 }

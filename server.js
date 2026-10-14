@@ -10,7 +10,7 @@ import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { UNIVERSE } from './public/js/lib/universe.js';
-import { fetchHistory, searchYahoo, SYMBOL_RE } from './lib/market-data.js';
+import { fetchHistory, fundamentalsFor, searchYahoo, SYMBOL_RE } from './lib/market-data.js';
 import { summarize } from './public/js/lib/scan.js';
 
 const PORT = Number(process.env.PORT) || 3000;
@@ -28,16 +28,20 @@ const MIME = {
 };
 
 const cache = new Map();
-async function cached(key, fn) {
+async function cached(key, fn, ttl = CACHE_MS) {
   const hit = cache.get(key);
-  if (hit && Date.now() - hit.at < CACHE_MS) return hit.value;
+  if (hit && Date.now() - hit.at < ttl) return hit.value;
   const value = await fn();
   cache.set(key, { at: Date.now(), value });
   return value;
 }
 
-const history = (symbol, range = '2y') =>
-  cached(`h:${symbol}:${range}`, () => fetchHistory(symbol, { range, demoOnly: DEMO_ONLY }));
+// Price history plus company fundamentals (fundamentals change slowly: cached 12 hours).
+async function history(symbol, range = '2y') {
+  const data = await cached(`h:${symbol}:${range}`, () => fetchHistory(symbol, { range, demoOnly: DEMO_ONLY }));
+  const fundamentals = await cached(`f:${symbol}`, () => fundamentalsFor(symbol, data, { demoOnly: DEMO_ONLY }), 12 * 3600e3);
+  return { ...data, fundamentals };
+}
 
 async function search(q) {
   const local = UNIVERSE.filter((u) => u.symbol.startsWith(q.toUpperCase()) || u.name.toLowerCase().includes(q.toLowerCase())).slice(0, 8);
@@ -52,12 +56,13 @@ async function search(q) {
 
 // Analyze the whole universe (a few at a time to stay polite to the data provider).
 async function scanAll() {
+  const benchmark = (await history('SPY').catch(() => null))?.candles;
   const queue = UNIVERSE.map((u) => u.symbol);
   const results = [];
   await Promise.all(Array.from({ length: 6 }, async () => {
     while (queue.length) {
       const s = queue.shift();
-      try { results.push(summarize(await history(s))); } catch { /* unknown symbol or too little history */ }
+      try { results.push(summarize(await history(s), { benchmark })); } catch { /* unknown symbol or too little history */ }
     }
   }));
   return { updated: new Date().toISOString(), results };

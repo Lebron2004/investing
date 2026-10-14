@@ -227,8 +227,74 @@ export const MODULES = [
     ],
   },
   {
+    id: 'fundamentals',
+    title: '5. Picking buys: setups & fundamentals',
+    blurb: 'What makes a good short-term trade vs. a good long-term investment.',
+    lessons: [
+      {
+        id: 'setups',
+        title: 'The 4 short-term setups',
+        minutes: 6,
+        body: `
+<p>A <strong>setup</strong> is a repeatable chart situation where the odds lean your way and you know exactly where you're wrong. StockWise looks for four:</p>
+<table class="table compact"><thead><tr><th>Setup</th><th>What it looks like</th><th>Where you're wrong</th><th>Typical hold</th></tr></thead><tbody>
+<tr><td><strong>Breakout</strong></td><td>Closes above its recent (20-day) high on 1.3×+ normal volume, above the 50-day average.</td><td>Falls back below the breakout level.</td><td>1–4 weeks</td></tr>
+<tr><td><strong>Pullback</strong></td><td>An uptrend (50-day above 200-day) dips to its 20-day average while RSI cools to 40–55.</td><td>Breaks below recent support.</td><td>1–4 weeks</td></tr>
+<tr><td><strong>Oversold bounce</strong></td><td>RSI under ~38 and turning up, while price holds near its 200-day average.</td><td>New low.</td><td>3 days – 2 weeks</td></tr>
+<tr><td><strong>Momentum</strong></td><td>Steadily above rising 20- and 50-day averages, RSI 55–72, beating the S&amp;P 500.</td><td>Closes below the 20-day average.</td><td>2–8 weeks</td></tr>
+</tbody></table>
+<h4>Relative strength</h4>
+<p>A stock up 5% while the S&amp;P 500 is up 10% is actually <em>weak</em>. StockWise compares every stock's 3-month return with the S&amp;P 500's. The leaders tend to keep leading.</p>
+<div class="callout">Pullbacks are the most beginner-friendly: you buy a strong stock on a dip, close to a clear stop. Breakouts work best in a strong overall market. Bounces are quick trades, so take profits faster.</div>`,
+        quiz: [
+          { q: 'A stock closes above its 20-day high on 3× normal volume. This is a…', options: ['Pullback', 'Breakout', 'Oversold bounce'], answer: 1, explain: 'New high + heavy volume = breakout.' },
+          { q: 'Stock A is up 4% in 3 months; the S&P 500 is up 9%. Stock A\'s relative strength is…', options: ['Strong', 'Weak', 'Neutral'], answer: 1, explain: 'It lagged the market by 5%, which is relative weakness.' },
+        ],
+      },
+      {
+        id: 'reading-fundamentals',
+        title: 'Reading a company\'s numbers',
+        minutes: 7,
+        body: `
+<p>For long-term buys you're buying a <em>business</em>. Four questions, the same four StockWise grades:</p>
+<h4>1. Quality: is it a good business?</h4>
+<ul><li><strong>Profit margin</strong>: profit per $1 of sales. Over 20% is excellent; negative means it's losing money.</li>
+<li><strong>Return on equity (ROE)</strong>: profit generated on shareholders' money. Over 15–20% is strong.</li>
+<li><strong>Debt/equity</strong>: under 1× is comfortable; over 2× can hurt when rates rise or sales fall.</li>
+<li><strong>Free cash flow</strong>: real cash left after running the business. Positive is what you want.</li></ul>
+<h4>2. Growth: is it getting bigger?</h4>
+<p><strong>Revenue</strong> (sales) and <strong>earnings</strong> growth vs. a year ago. Sales growth above 10% a year is healthy; shrinking sales is a red flag.</p>
+<h4>3. Value: is the price reasonable?</h4>
+<ul><li><strong>P/E</strong> = price ÷ earnings per share. A P/E of 20 means you pay $20 for every $1 of yearly profit. The S&amp;P 500 has averaged roughly 15–20.</li>
+<li><strong>PEG</strong> = P/E ÷ growth rate. It adjusts for growth: a P/E of 40 growing 40% a year (PEG 1) can be cheaper than a P/E of 15 growing 3% (PEG 5).</li></ul>
+<h4>4. Analysts: what do the pros expect?</h4>
+<p>Wall Street analysts publish 12-month <strong>price targets</strong> and Buy/Hold/Sell ratings. Useful as a sanity check, but they're often wrong and tend to be too optimistic.</p>
+<div class="callout">Great company ≠ great stock at any price. The best long-term buys combine good fundamentals <em>and</em> a healthy price trend, which is why StockWise's long-term score is half each.</div>`,
+        quiz: [
+          { q: 'Company A: P/E 40, earnings growing 40%/yr. Company B: P/E 15, growing 3%/yr. Which has the better PEG?', options: ['A (PEG 1.0)', 'B (PEG 5.0)', 'They\'re equal'], answer: 0, explain: '40 ÷ 40 = 1.0 vs 15 ÷ 3 = 5.0. A is cheaper for its growth.' },
+          { q: 'A profit margin of −8% means…', options: ['The company is losing money', 'The stock fell 8%', 'It pays an 8% dividend'], answer: 0, explain: 'Negative margin = it spends more than it earns.' },
+        ],
+      },
+      {
+        id: 'earnings-season',
+        title: 'Earnings season & gap risk',
+        minutes: 4,
+        body: `
+<p>Four times a year every company reports its results. The stock can <strong>gap</strong>: open 5–20% higher or lower the next morning, jumping straight past your stop-loss.</p>
+<ul>
+<li><strong>Short-term traders:</strong> StockWise lowers the short-term score when earnings are within 7 days and shows a warning. Common choices: wait until after the report, use half your normal size, or take profits before it.</li>
+<li><strong>Long-term investors:</strong> earnings matter for the <em>trend</em> of results (is growth continuing?), not for one quarter's surprise. Don't panic-sell a great business over one miss.</li>
+</ul>
+<div class="callout">Your stop-loss protects you from slow declines, not from overnight gaps. That's another reason to keep position sizes small.</div>`,
+        quiz: [
+          { q: 'Earnings are in 2 days and you\'re opening a swing trade. The careful move is…', options: ['Use full size, since the stop protects you', 'Wait for the report or use a smaller position', 'Remove your stop'], answer: 1, explain: 'A gap can skip right past your stop, so reduce exposure to the event.' },
+        ],
+      },
+    ],
+  },
+  {
     id: 'risk',
-    title: '5. Risk management',
+    title: '6. Risk management',
     blurb: 'The skill that keeps you in the game. Most important module.',
     lessons: [
       {
@@ -292,7 +358,7 @@ export const MODULES = [
   },
   {
     id: 'plan',
-    title: '6. Putting it together',
+    title: '7. Putting it together',
     blurb: 'Your personal playbook and how to use StockWise.',
     lessons: [
       {
@@ -345,7 +411,7 @@ export const MODULES = [
 <li><strong>Stock page</strong>: chart, both scores <em>with the reasons behind every point</em>, buy zone, stop, targets, how many shares to buy, and when to sell each part.</li>
 <li><strong>Position Sizer</strong>: run the numbers on any trade idea of your own.</li>
 </ol>
-<div class="callout">The scores only use price and volume. They can't see earnings, news, debt or valuation. Treat a high score as "worth researching", not "guaranteed to go up".</div>`,
+<div class="callout">Short-term scores read the chart and the earnings calendar. Long-term scores add company fundamentals. Neither reads the news, and fundamentals come from public data that can lag. Treat a high score as "worth researching", not "guaranteed to go up".</div>`,
         quiz: [
           { q: 'A StockWise "Strong Buy" score means…', options: ['The stock will go up', 'Price trends and momentum look favorable, so research it further', 'An analyst recommends it'], answer: 1, explain: 'It is a rules-based technical score, not a guarantee or an analyst opinion.' },
         ],

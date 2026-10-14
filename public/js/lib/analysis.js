@@ -52,7 +52,7 @@ export function computeIndicators(candles) {
   };
 }
 
-function shortTermScore(candles, ind) {
+function shortTermScore(candles, ind, extra = {}) {
   const sc = new Scorecard();
   const price = last(ind.closes);
   const s20 = last(ind.sma20), s50 = last(ind.sma50);
@@ -99,7 +99,151 @@ function shortTermScore(candles, ind) {
   const bu = last(ind.bb.upper), bl = last(ind.bb.lower);
   if (bu != null && price > bu) sc.add(-4, 'Price is above the upper Bollinger Band (stretched)');
   if (bl != null && price < bl) sc.add(4, 'Price is below the lower Bollinger Band (stretched to the downside)');
+  if (extra.rs3m != null) {
+    if (extra.rs3m > 0.05) sc.add(8, `Beating the S&P 500 by ${pct(extra.rs3m)} over 3 months (relative strength)`);
+    else if (extra.rs3m < -0.05) sc.add(-8, `Lagging the S&P 500 by ${pct(-extra.rs3m)} over 3 months (relative weakness)`);
+  }
+  if (extra.setup) sc.add(extra.setup.points, `${extra.setup.label} setup: ${extra.setup.text}`);
+  if (extra.daysToEarnings != null && extra.daysToEarnings >= 0 && extra.daysToEarnings <= 7) {
+    sc.add(-10, `Earnings report in ${extra.daysToEarnings === 0 ? 'less than a day' : `${extra.daysToEarnings} day${extra.daysToEarnings === 1 ? '' : 's'}`}. A surprise can gap the price right past your stop`);
+  }
   return sc.result();
+}
+
+// Classifies the current chart pattern into one of the classic swing-trade entries.
+export function detectSetup(candles, ind, rs3m = null) {
+  const n = candles.length;
+  const c = candles[n - 1].close;
+  const s20 = last(ind.sma20), s50 = last(ind.sma50), s200 = last(ind.sma200);
+  const r = last(ind.rsi14), rPrev = ind.rsi14[n - 3];
+  const prior = candles.slice(-21, -1);
+  const prevHigh = prior.length ? Math.max(...prior.map((x) => x.high)) : null;
+  const v20 = last(ind.vol20);
+  const volRatio = v20 ? (candles[n - 1].volume || 0) / v20 : 0;
+
+  if (prevHigh && c > prevHigh && s50 && c > s50 && volRatio > 1.3) {
+    return { key: 'breakout', label: 'Breakout', points: 8, hold: '1–4 weeks', level: prevHigh,
+      text: `closed above its 20-day high (${fmt(prevHigh)}) on ${volRatio.toFixed(1)}× normal volume`,
+      howTo: `Buy near ${fmt(prevHigh)}–${fmt(c)}. If it closes back below ${fmt(prevHigh)}, the breakout failed. Get out.` };
+  }
+  if (s20 && s50 && s200 && c > s50 && s50 > s200 && Math.abs(c - s20) / s20 < 0.025 && r != null && r >= 38 && r <= 58) {
+    return { key: 'pullback', label: 'Pullback', points: 8, hold: '1–4 weeks', level: s20,
+      text: `dipped to its 20-day average (${fmt(s20)}) inside an uptrend. A lower-risk entry`,
+      howTo: `Buy near ${fmt(s20)}. The trend is your cushion, so wait for a green day if you want confirmation.` };
+  }
+  if (r != null && rPrev != null && r < 38 && r > rPrev && s200 && c > s200 * 0.95) {
+    return { key: 'bounce', label: 'Oversold bounce', points: 5, hold: '3 days – 2 weeks', level: c,
+      text: `RSI ${r.toFixed(0)} is oversold and turning up, while price holds near its long-term trend`,
+      howTo: 'Smaller position and quicker profits: bounces are shorter than trends. Take Target 1 and tighten the stop.' };
+  }
+  if (s20 && s50 && c > s20 && s20 > s50 && r != null && r >= 55 && r <= 72 && (rs3m == null || rs3m > 0)) {
+    return { key: 'momentum', label: 'Momentum', points: 5, hold: '2–8 weeks', level: s20,
+      text: 'riding steadily above its 20- and 50-day averages with healthy RSI',
+      howTo: `Ride the trend and trail your stop under the 20-day average (${fmt(s20)}). Buying a small dip is better than chasing a big green day.` };
+  }
+  return null;
+}
+
+export function relativeStrength(closes, benchCloses, bars = 63) {
+  if (!benchCloses || benchCloses.length <= bars || closes.length <= bars) return null;
+  return pctChange(closes, bars) - pctChange(benchCloses, bars);
+}
+
+// --- Fundamentals ----------------------------------------------------------------
+
+export function grade(score) {
+  if (score == null) return null;
+  return score >= 80 ? 'A' : score >= 65 ? 'B' : score >= 50 ? 'C' : score >= 35 ? 'D' : 'F';
+}
+
+// Scores a company's business on four 0–100 pillars, each with plain-English reasons.
+export function fundamentalScore(f, price) {
+  if (!f) return null;
+  const pillars = {};
+  const reasons = [];
+  const pillar = (key, label, fn) => {
+    let s = 50, any = false;
+    const add = (pts, text) => { s += pts; any = true; reasons.push({ points: pts, text, group: label }); };
+    fn(add);
+    if (any) pillars[key] = Math.round(clamp(s, 0, 100));
+  };
+  pillar('quality', 'Quality', (add) => {
+    const m = f.profitMargin;
+    if (m != null) {
+      if (m > 0.2) add(20, `Very profitable: keeps ${pct(m)} of revenue as profit`);
+      else if (m > 0.1) add(10, `Solid profit margin of ${pct(m)}`);
+      else if (m > 0) add(0, `Thin profit margin of ${pct(m)}`);
+      else add(-25, `Losing money (profit margin ${pct(m)})`);
+    }
+    if (f.roe != null) {
+      if (f.roe > 0.2) add(15, `High return on equity (${pct(f.roe)}). Management uses capital well`);
+      else if (f.roe < 0) add(-15, `Negative return on equity (${pct(f.roe)})`);
+    }
+    if (f.debtToEquity != null) {
+      if (f.debtToEquity < 50) add(10, `Low debt (debt/equity ${(f.debtToEquity / 100).toFixed(2)}×)`);
+      else if (f.debtToEquity > 200) add(-15, `Heavy debt (debt/equity ${(f.debtToEquity / 100).toFixed(1)}×)`);
+    }
+    if (f.freeCashflow != null) {
+      f.freeCashflow > 0 ? add(5, 'Generates free cash flow') : add(-10, 'Burning cash (negative free cash flow)');
+    }
+  });
+  pillar('growth', 'Growth', (add) => {
+    if (f.revenueGrowth != null) {
+      const g = f.revenueGrowth;
+      if (g > 0.2) add(25, `Sales growing fast (+${pct(g)} vs. a year ago)`);
+      else if (g > 0.08) add(12, `Healthy sales growth (+${pct(g)})`);
+      else if (g >= 0) add(0, `Slow sales growth (+${pct(g)})`);
+      else add(-20, `Sales shrinking (${pct(g)})`);
+    }
+    if (f.earningsGrowth != null) {
+      const g = f.earningsGrowth;
+      if (g > 0.2) add(20, `Earnings growing fast (+${pct(g)})`);
+      else if (g > 0.05) add(8, `Earnings growing (+${pct(g)})`);
+      else if (g < 0) add(-15, `Earnings falling (${pct(g)})`);
+    }
+  });
+  pillar('value', 'Value', (add) => {
+    const pe = f.forwardPE ?? f.trailingPE;
+    if (pe == null || pe <= 0) {
+      if (f.profitMargin != null && f.profitMargin <= 0) add(-20, 'No P/E: the company isn\'t profitable yet, so the price rests on future hopes');
+    } else if (pe < 15) add(20, `Cheap: ${pe.toFixed(1)}× earnings`);
+    else if (pe < 25) add(8, `Fairly priced: ${pe.toFixed(1)}× earnings`);
+    else if (pe < 40) add(-5, `Pricey: ${pe.toFixed(1)}× earnings`);
+    else add(-20, `Expensive: ${pe.toFixed(0)}× earnings. A lot of growth is already priced in`);
+    if (f.peg != null && f.peg > 0) {
+      if (f.peg < 1) add(15, `PEG ${f.peg.toFixed(2)}: cheap for how fast it's growing`);
+      else if (f.peg < 2) add(5, `PEG ${f.peg.toFixed(2)}: reasonable for its growth`);
+      else if (f.peg > 3) add(-10, `PEG ${f.peg.toFixed(2)}: expensive even after accounting for growth`);
+    }
+  });
+  pillar('analysts', 'Analysts', (add) => {
+    if (f.targetMean != null && price && (f.analystCount == null || f.analystCount >= 3)) {
+      const up = f.targetMean / price - 1;
+      if (up > 0.2) add(20, `Analysts' average target ${fmt(f.targetMean)} is ${pct(up)} above today's price`);
+      else if (up > 0.08) add(8, `Analysts' average target ${fmt(f.targetMean)} is ${pct(up)} higher`);
+      else if (up < -0.05) add(-20, `Price is already above analysts' average target (${fmt(f.targetMean)})`);
+      else add(0, `Trading close to analysts' average target (${fmt(f.targetMean)})`);
+    }
+    const rm = f.recommendationMean;
+    if (rm != null && (f.analystCount == null || f.analystCount >= 3)) {
+      const who = f.analystCount ? `${f.analystCount} analysts` : 'Analysts';
+      if (rm <= 1.8) add(15, `${who} rate it a Strong Buy on average`);
+      else if (rm <= 2.5) add(5, `${who} rate it a Buy on average`);
+      else if (rm > 3) add(-15, `${who} lean toward Sell`);
+    }
+  });
+  const vals = Object.values(pillars);
+  if (!vals.length) return null;
+  const score = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
+  const upside = f.targetMean && price ? f.targetMean / price - 1 : null;
+  return {
+    score,
+    pillars,
+    grades: Object.fromEntries(Object.entries(pillars).map(([k, v]) => [k, grade(v)])),
+    reasons,
+    upside,
+    source: f.source,
+  };
 }
 
 function longTermScore(candles, ind) {
@@ -195,15 +339,44 @@ export function longTermPlan(price, ind) {
   return { tranches, exitBelow, trailingStopPct: 0.2 };
 }
 
-export function analyze(candles) {
+// ctx.benchmark: S&P 500 (SPY) candles for relative strength.
+// ctx.fundamentals: object from lib/fundamentals.js (or null).
+export function analyze(candles, ctx = {}) {
   if (!candles || candles.length < 30) throw new Error('Not enough price history to analyze');
   const ind = computeIndicators(candles);
   const price = last(ind.closes);
   const prev = candles[candles.length - 2].close;
   const atrVal = last(ind.atr14) ?? price * 0.02;
   const levels = keyLevels(candles, price, atrVal);
-  const shortTerm = shortTermScore(candles, ind);
-  const longTerm = longTermScore(candles, ind);
+  const benchCloses = ctx.benchmark?.map((c) => c.close);
+  const rs3m = relativeStrength(ind.closes, benchCloses, 63);
+  const rs6m = relativeStrength(ind.closes, benchCloses, 126);
+  const f = ctx.fundamentals || null;
+  const daysToEarnings = f?.nextEarnings ? Math.max(0, Math.round((f.nextEarnings - candles[candles.length - 1].t) / 864e5)) : null;
+  const setup = detectSetup(candles, ind, rs3m);
+
+  const shortTerm = { ...shortTermScore(candles, ind, { rs3m, setup, daysToEarnings }), setup, hold: setup?.hold || '1–4 weeks' };
+
+  // Long term = half price trend, half business fundamentals (when we have them).
+  const trend = longTermScore(candles, ind);
+  if (rs6m != null) {
+    if (rs6m > 0.1) trend.reasons.push({ points: 0, text: `Outperformed the S&P 500 by ${pct(rs6m)} over 6 months` });
+    else if (rs6m < -0.1) trend.reasons.push({ points: 0, text: `Underperformed the S&P 500 by ${pct(-rs6m)} over 6 months` });
+  }
+  const fund = fundamentalScore(f, price);
+  const ltScore = fund ? Math.round(0.5 * trend.score + 0.5 * fund.score) : trend.score;
+  const longTerm = {
+    ...trend,
+    ...rate(ltScore),
+    score: ltScore,
+    trendScore: trend.score,
+    fundScore: fund?.score ?? null,
+    grades: fund?.grades ?? null,
+    upside: fund?.upside ?? null,
+    reasons: [...trend.reasons.map((r) => ({ ...r, group: 'Trend' })), ...(fund?.reasons || [])],
+    hold: '1–5 years',
+  };
+
   return {
     price,
     change: price - prev,
@@ -214,6 +387,10 @@ export function analyze(candles) {
     sma50: last(ind.sma50),
     sma200: last(ind.sma200),
     maxDrawdown: maxDrawdown(ind.closes.slice(-252)),
+    rs3m,
+    rs6m,
+    daysToEarnings,
+    fundamentals: f,
     shortTerm,
     longTerm,
     levels,

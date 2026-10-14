@@ -36,9 +36,13 @@ export async function getHistory(symbol, range = '2y') {
   return p;
 }
 
+// The S&P 500 (SPY) is the yardstick for relative strength. Optional: analysis works without it.
+const getBenchmark = () => getHistory('SPY').then((d) => d.candles, () => null);
+const ctxFor = (data, benchmark) => ({ benchmark, fundamentals: data.fundamentals });
+
 export async function getAnalysis(symbol) {
-  const data = await getHistory(symbol);
-  return { ...data, analysis: analyze(data.candles) };
+  const [data, benchmark] = await Promise.all([getHistory(symbol), getBenchmark()]);
+  return { ...data, analysis: analyze(data.candles, ctxFor(data, benchmark)) };
 }
 
 // Returns analyzed data for every symbol that loaded; silently skips the rest.
@@ -50,11 +54,12 @@ export async function getBatch(symbols) {
     const r = await fetch(`api/batch?symbols=${symbols.map(encodeURIComponent).join(',')}`);
     entries = Object.entries((await r.json()).results);
   }
+  const benchmark = await getBenchmark();
   const out = [];
   for (const [symbol, data] of entries) {
     if (data.error) continue;
     memo.set(`${symbol}:2y`, Promise.resolve(data));
-    try { out.push({ ...data, analysis: analyze(data.candles) }); } catch { /* too little history */ }
+    try { out.push({ ...data, analysis: analyze(data.candles, ctxFor(data, benchmark)) }); } catch { /* too little history */ }
   }
   return out;
 }
@@ -118,6 +123,14 @@ export function h(html) {
 export function badge(rating) {
   return `<span class="badge ${rating.tone}">${esc(rating.label)}</span>`;
 }
+
+export function gradeChips(grades) {
+  if (!grades) return '';
+  const names = { quality: 'Quality', growth: 'Growth', value: 'Value', analysts: 'Analysts' };
+  return `<div class="grades">${Object.entries(names).filter(([k]) => grades[k]).map(([k, n]) => `<span class="grade g-${grades[k]}" title="${n}: grade ${grades[k]}"><b>${grades[k]}</b>${n}</span>`).join('')}</div>`;
+}
+
+export const bigMoney = (n) => (n == null ? '—' : n >= 1e12 ? `$${(n / 1e12).toFixed(2)}T` : n >= 1e9 ? `$${(n / 1e9).toFixed(1)}B` : `$${(n / 1e6).toFixed(0)}M`);
 
 export function scoreBar(score) {
   const tone = score >= 58 ? 'up' : score >= 43 ? 'flat' : 'down';
