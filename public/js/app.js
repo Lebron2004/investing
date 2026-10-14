@@ -1,10 +1,11 @@
 // Hash router + global search box.
-import { searchSymbols, esc } from './api.js';
+import { searchSymbols, staticSite, esc } from './api.js';
 import { renderWatchlist } from './views/watchlist.js';
 import { renderAnalyze } from './views/analyze.js';
 import { renderIdeas } from './views/ideas.js';
 import { renderPlanner } from './views/planner.js';
 import { renderSizer } from './views/sizer.js';
+import { renderPortfolio } from './views/portfolio.js';
 import { renderAcademy, renderLesson } from './views/academy.js';
 
 const app = document.getElementById('app');
@@ -13,6 +14,7 @@ let cleanup = null;
 const routes = [
   [/^\/?$/, 'watchlist', () => renderWatchlist(app)],
   [/^\/stock\/([A-Za-z0-9.^=-]+)$/, 'watchlist', (m) => renderAnalyze(app, m[1].toUpperCase())],
+  [/^\/portfolio$/, 'portfolio', () => renderPortfolio(app)],
   [/^\/ideas$/, 'ideas', () => renderIdeas(app)],
   [/^\/planner$/, 'planner', () => renderPlanner(app)],
   [/^\/sizer$/, 'sizer', (m, q) => renderSizer(app, q)],
@@ -70,3 +72,10 @@ form.addEventListener('submit', (e) => {
 });
 list.addEventListener('click', () => { input.value = ''; list.hidden = true; });
 document.addEventListener('click', (e) => { if (!form.contains(e.target)) list.hidden = true; });
+
+// On the GitHub Pages build, show when prices were last refreshed.
+staticSite.then((m) => {
+  if (!m) return;
+  const when = new Date(m.updated).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
+  document.getElementById('data-status').textContent = `Prices last updated ${when}. Daily closing prices, refreshed automatically several times each trading day.`;
+});

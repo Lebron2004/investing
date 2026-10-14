@@ -2,6 +2,7 @@
 
 A stock-tracking and trading-education site:
 
+- **My Portfolio**: import a positions CSV from your broker (Fidelity, Schwab, Vanguard, E*TRADE, …) or type holdings in. You get a step-by-step action plan: what to sell, trim, rebalance or buy more of, with share counts and a "sell if below" price for each holding. Your holdings never leave your browser.
 - **Watchlist**: track stocks with live prices plus a short-term and long-term rating for each.
 - **Stock analyzer**: candlestick chart (20/50/200-day averages, RSI, volume) and 0–100 scores where every point is explained. You also get a buy zone, stop-loss, three profit targets, how many shares to buy for *your* account, and a step-by-step plan for when to sell.
 - **Top Ideas**: scans ~32 large US stocks and ranks the best short-term and long-term setups, plus the weakest ones to avoid.
@@ -11,7 +12,19 @@ A stock-tracking and trading-education site:
 
 > Educational tool, not financial advice. Signals use price and volume only.
 
-## Run it
+## Put it on GitHub Pages (free hosting)
+
+1. In this repo on GitHub: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+2. Open the **Actions** tab, pick **Deploy site**, and click **Run workflow** (or push any commit).
+3. After a minute or two the site is live at `https://<your-username>.github.io/<repo-name>/`.
+
+GitHub Pages can only host files and can't run `server.js`. So the workflow in `.github/workflows/deploy.yml` downloads fresh daily prices and publishes them with the site. It runs on every push and automatically about 5 times each trading day.
+
+**Tracking more stocks:** the site includes about 38 big stocks and ETFs. To add others (for example, ones you own), list them in [`symbols.txt`](symbols.txt), one per line, and commit. They show up after the next run.
+
+> Pages on a **private** repo needs a paid GitHub plan. On a free account, make the repo public. Your portfolio is still private, because it's stored only in your browser and never in the repo.
+
+## Run it on your computer
 
 Requires Node.js 18+. No `npm install` is needed because there are no dependencies.
 
@@ -27,11 +40,15 @@ If Yahoo Finance can't be reached, the server falls back to simulated data and t
 
 | File | Purpose |
 | --- | --- |
-| `server.js` | Static file server + `/api/history`, `/api/batch`, `/api/search` (10-min cache) |
+| `server.js` | Local server: static files + `/api/history`, `/api/batch`, `/api/search` (10-min cache) |
+| `lib/market-data.js` | Price downloads: Yahoo Finance → Stooq → demo fallback |
+| `scripts/build-static.js` | Builds the GitHub Pages version into `dist/` with prices baked in |
+| `.github/workflows/deploy.yml` | Tests, builds and deploys to Pages on push and on a schedule |
+| `public/js/lib/portfolio.js` | Broker CSV import and the portfolio action rules |
 | `public/js/lib/indicators.js` | SMA, EMA, RSI, MACD, ATR, Bollinger, pivots |
 | `public/js/lib/analysis.js` | Scoring rules, support/resistance, trade and long-term plans |
 | `public/js/lib/sizing.js` | Position sizing, sell plans, portfolio allocation |
 | `public/js/lib/lessons.js` | Academy curriculum |
 | `public/js/views/*` | One file per page |
 
-Your account size, risk style, watchlist and lesson progress are saved in your browser (localStorage).
+Your account size, risk style, watchlist, portfolio and lesson progress are saved in your browser (localStorage).

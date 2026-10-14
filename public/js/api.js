@@ -3,14 +3,34 @@ import { analyze } from './lib/analysis.js';
 
 const memo = new Map();
 
+// On GitHub Pages there is no server: prices are pre-downloaded into data/ by a GitHub Action.
+// If data/manifest.json exists we're in that "static" mode; otherwise we talk to server.js.
+export const staticSite = fetch('data/manifest.json', { cache: 'no-cache' })
+  .then((r) => (r.ok ? r.json() : null))
+  .catch(() => null);
+
+// Mirrors dataFileName() in lib/market-data.js.
+const dataFileName = (symbol) => `${symbol.toUpperCase().replace(/[^A-Z0-9.-]/g, '_')}.json`;
+
+async function loadHistory(symbol, range) {
+  const manifest = await staticSite;
+  if (manifest) {
+    const r = await fetch(`data/history/${dataFileName(symbol)}?v=${encodeURIComponent(manifest.updated)}`);
+    if (!r.ok) {
+      throw new Error(`${symbol} isn't tracked on this site yet. To add it, put ${symbol} on its own line in symbols.txt in your GitHub repo and commit. Prices appear after the next update (a few minutes).`);
+    }
+    return r.json();
+  }
+  const r = await fetch(`api/history?symbol=${encodeURIComponent(symbol)}&range=${range}`);
+  const json = await r.json();
+  if (!r.ok) throw new Error(json.error || `Could not load ${symbol}`);
+  return json;
+}
+
 export async function getHistory(symbol, range = '2y') {
   const key = `${symbol}:${range}`;
   if (memo.has(key)) return memo.get(key);
-  const p = fetch(`/api/history?symbol=${encodeURIComponent(symbol)}&range=${range}`).then(async (r) => {
-    const json = await r.json();
-    if (!r.ok) throw new Error(json.error || `Could not load ${symbol}`);
-    return json;
-  });
+  const p = loadHistory(symbol, range);
   memo.set(key, p);
   p.catch(() => memo.delete(key));
   return p;
@@ -21,11 +41,17 @@ export async function getAnalysis(symbol) {
   return { ...data, analysis: analyze(data.candles) };
 }
 
+// Returns analyzed data for every symbol that loaded; silently skips the rest.
 export async function getBatch(symbols) {
-  const r = await fetch(`/api/batch?symbols=${symbols.map(encodeURIComponent).join(',')}`);
-  const { results } = await r.json();
+  let entries;
+  if (await staticSite) {
+    entries = await Promise.all(symbols.map((s) => getHistory(s).then((d) => [s, d], (e) => [s, { error: e.message }])));
+  } else {
+    const r = await fetch(`api/batch?symbols=${symbols.map(encodeURIComponent).join(',')}`);
+    entries = Object.entries((await r.json()).results);
+  }
   const out = [];
-  for (const [symbol, data] of Object.entries(results)) {
+  for (const [symbol, data] of entries) {
     if (data.error) continue;
     memo.set(`${symbol}:2y`, Promise.resolve(data));
     try { out.push({ ...data, analysis: analyze(data.candles) }); } catch { /* too little history */ }
@@ -34,7 +60,15 @@ export async function getBatch(symbols) {
 }
 
 export async function searchSymbols(q) {
-  const r = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+  const manifest = await staticSite;
+  if (manifest) {
+    const Q = q.toUpperCase();
+    return manifest.symbols
+      .filter((s) => s.symbol.startsWith(Q) || s.name.toUpperCase().includes(Q))
+      .sort((a, b) => (b.symbol.startsWith(Q) - a.symbol.startsWith(Q)))
+      .slice(0, 8);
+  }
+  const r = await fetch(`api/search?q=${encodeURIComponent(q)}`);
   return (await r.json()).results || [];
 }
 
@@ -81,6 +115,6 @@ export function scoreBar(score) {
 export function demoNotice(items) {
   const anyDemo = [].concat(items).some((d) => d && d.source === 'demo');
   return anyDemo
-    ? '<div class="notice warn"><strong>Demo data.</strong> Live prices could not be reached, so these numbers are simulated. Don\'t trade on them. Run the server with internet access to get real prices.</div>'
+    ? '<div class="notice warn"><strong>Demo data.</strong> Live prices could not be reached, so these numbers are simulated. Don\'t trade on them. On your own computer, run the server with internet access. On GitHub Pages, check the latest run under the repo\'s Actions tab.</div>'
     : '';
 }

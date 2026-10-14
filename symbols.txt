@@ -1,0 +1,9 @@
+# Extra symbols for the GitHub Pages version of the site.
+# The site already includes ~38 big stocks and ETFs (see public/js/lib/universe.js).
+# Add any other stock you own or want to track: one ticker per line. Save and commit,
+# and GitHub will download its prices on the next update.
+#
+# Examples (delete the # to turn one on):
+# SOFI
+# BRK.B
+# SCHD

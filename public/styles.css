@@ -297,3 +297,25 @@ tr.clickable:hover td { background: var(--surface-2); }
   .form .row, .form .row.three { grid-template-columns: 1fr; }
   .scorebar { width: 90px; }
 }
+
+/* portfolio */
+.privacy { font-size: .9rem; background: var(--surface-2); border-radius: 8px; padding: 10px 12px; max-width: 760px; }
+.import-grid { align-items: start; }
+.dropzone {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; text-align: center;
+  border: 2px dashed var(--border); border-radius: 10px; padding: 28px 16px; cursor: pointer; font-weight: 400; margin: 8px 0;
+}
+.dropzone:hover, .dropzone.over { border-color: var(--accent); background: var(--surface-2); }
+.edit-table input { width: 100%; min-width: 64px; padding: 6px 8px; }
+.edit-table td { padding: 4px 6px; }
+.edit-table td.num input { text-align: right; }
+.small-btn { padding: 5px 10px; font-size: .85rem; }
+#holdings-form { display: flex; flex-direction: column; gap: 12px; align-items: stretch; }
+#holdings-form > .small-btn { align-self: flex-start; }
+.big-stats.four { grid-template-columns: repeat(4, 1fr); }
+.link-btn { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; text-decoration: underline; }
+.todo-list { list-style: none; padding: 0; margin: 0 0 12px; }
+.todo { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-top: 1px solid var(--border); }
+.todo .badge { min-width: 86px; text-align: center; margin-top: 2px; }
+.why { max-width: 340px; white-space: normal; }
+@media (max-width: 860px) { .big-stats.four { grid-template-columns: repeat(2, 1fr); } .why { display: none; } }

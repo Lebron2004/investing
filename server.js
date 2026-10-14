@@ -1,21 +1,21 @@
 // StockWise server: serves the static site and a small market-data API.
 // No dependencies — needs Node 18+ (built-in fetch).
 //
-// Data source: Yahoo Finance's public chart endpoint (free, no API key).
-// If it can't be reached, or DATA_SOURCE=demo is set, the API returns simulated prices
-// and marks them `source: "demo"` so the UI can show a clear warning.
+// Prices come from lib/market-data.js (Yahoo Finance, then Stooq, both free with no API key).
+// If neither can be reached, or DATA_SOURCE=demo is set, the API returns simulated prices
+// marked `source: "demo"` so the UI shows a clear warning.
 
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { UNIVERSE } from './public/js/lib/universe.js';
+import { fetchHistory, searchYahoo, SYMBOL_RE } from './lib/market-data.js';
 
 const PORT = Number(process.env.PORT) || 3000;
 const DEMO_ONLY = process.env.DATA_SOURCE === 'demo';
 const PUBLIC_DIR = fileURLToPath(new URL('./public/', import.meta.url));
 const CACHE_MS = 10 * 60 * 1000;
-const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36';
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -35,108 +35,15 @@ async function cached(key, fn) {
   return value;
 }
 
-const SYMBOL_RE = /^[A-Z0-9.^=-]{1,15}$/;
-
-async function fetchYahoo(symbol, range) {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=${range}&interval=1d&includePrePost=false`;
-  const res = await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(8000) });
-  if (!res.ok) throw new Error(`Yahoo responded ${res.status}`);
-  const json = await res.json();
-  const r = json?.chart?.result?.[0];
-  if (!r || !r.timestamp) throw new Error(json?.chart?.error?.description || 'Unknown symbol');
-  const q = r.indicators.quote[0];
-  const candles = [];
-  r.timestamp.forEach((t, i) => {
-    if (q.close[i] == null || q.open[i] == null) return;
-    candles.push({ t: t * 1000, open: q.open[i], high: q.high[i], low: q.low[i], close: q.close[i], volume: q.volume[i] || 0 });
-  });
-  if (candles.length < 2) throw new Error('No price data for this symbol');
-  const meta = r.meta || {};
-  return {
-    symbol,
-    name: meta.longName || meta.shortName || UNIVERSE.find((u) => u.symbol === symbol)?.name || symbol,
-    currency: meta.currency || 'USD',
-    exchange: meta.exchangeName,
-    candles,
-    source: 'yahoo',
-  };
-}
-
-// --- Demo data: a deterministic random walk per symbol so the app works offline. ---
-function hash(str) {
-  let h = 2166136261;
-  for (const ch of str) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
-  return h >>> 0;
-}
-function mulberry32(seed) {
-  return () => {
-    seed |= 0; seed = (seed + 0x6d2b79f5) | 0;
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-function demoSeries(symbol, bars = 520) {
-  const h = hash(symbol);
-  const rnd = mulberry32(h);
-  const gauss = () => Math.sqrt(-2 * Math.log(rnd() + 1e-12)) * Math.cos(2 * Math.PI * rnd());
-  const vol = 0.012 + (h % 25) / 1000; // 1.2% – 3.6% daily
-  const drift = ((h >> 5) % 21 - 8) / 10000; // slight up or down bias
-  let price = 20 + (h % 480);
-  const days = [];
-  const d = new Date();
-  d.setUTCHours(0, 0, 0, 0);
-  while (days.length < bars) {
-    if (d.getUTCDay() !== 0 && d.getUTCDay() !== 6) days.unshift(d.getTime());
-    d.setUTCDate(d.getUTCDate() - 1);
-  }
-  let regime = drift;
-  const candles = days.map((t, i) => {
-    if (i % 60 === 0) regime = drift + (rnd() - 0.5) * 0.004; // trend changes every ~quarter
-    const open = price;
-    const close = Math.max(1, open * Math.exp(regime + vol * gauss()));
-    const high = Math.max(open, close) * (1 + Math.abs(gauss()) * vol * 0.5);
-    const low = Math.min(open, close) * (1 - Math.abs(gauss()) * vol * 0.5);
-    price = close;
-    const volume = Math.round(1e6 * (1 + (h % 50)) * (0.6 + rnd()));
-    return { t, open, high, low, close, volume };
-  });
-  return {
-    symbol,
-    name: UNIVERSE.find((u) => u.symbol === symbol)?.name || symbol,
-    currency: 'USD',
-    candles,
-    source: 'demo',
-  };
-}
-
-async function history(symbol, range = '2y') {
-  return cached(`h:${symbol}:${range}`, async () => {
-    if (DEMO_ONLY) return demoSeries(symbol);
-    try {
-      return await fetchYahoo(symbol, range);
-    } catch (err) {
-      if (/Unknown symbol|No data|No price data|Not Found|404/i.test(err.message)) throw Object.assign(err, { status: 404 });
-      console.warn(`[data] ${symbol}: ${err.message} — using demo data`);
-      return demoSeries(symbol);
-    }
-  });
-}
+const history = (symbol, range = '2y') =>
+  cached(`h:${symbol}:${range}`, () => fetchHistory(symbol, { range, demoOnly: DEMO_ONLY }));
 
 async function search(q) {
   const local = UNIVERSE.filter((u) => u.symbol.startsWith(q.toUpperCase()) || u.name.toLowerCase().includes(q.toLowerCase())).slice(0, 8);
   if (DEMO_ONLY) return local;
   try {
-    return await cached(`s:${q}`, async () => {
-      const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=8&newsCount=0`;
-      const res = await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(5000) });
-      if (!res.ok) throw new Error(String(res.status));
-      const json = await res.json();
-      const quotes = (json.quotes || [])
-        .filter((x) => x.symbol && ['EQUITY', 'ETF', 'INDEX', 'MUTUALFUND'].includes(x.quoteType))
-        .map((x) => ({ symbol: x.symbol, name: x.longname || x.shortname || x.symbol, type: x.quoteType, exchange: x.exchDisp }));
-      return quotes.length ? quotes : local;
-    });
+    const quotes = await cached(`s:${q}`, () => searchYahoo(q));
+    return quotes.length ? quotes : local;
   } catch {
     return local;
   }

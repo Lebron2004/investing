@@ -1,0 +1,64 @@
+# Publishes StockWise to GitHub Pages and refreshes stock prices on a schedule.
+#
+# One-time setup: repo Settings → Pages → "Build and deployment" → Source: GitHub Actions.
+# The site then lives at https://<your-username>.github.io/<repo-name>/
+#
+# GitHub Pages can't run server.js, so each run downloads fresh daily prices for every
+# symbol (the built-in list + symbols.txt) and publishes them as static JSON files.
+
+name: Deploy site
+
+on:
+  push:
+  workflow_dispatch:
+  schedule:
+    # Mon–Fri, in UTC: roughly 10:45am, 12:45pm, 2:45pm and 4:45pm New York time,
+    # plus a run after the close. Schedules only run on the default branch.
+    - cron: '45 14,16,18 * * 1-5'
+    - cron: '45 20 * * 1-5'
+    - cron: '30 22 * * 1-5'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run tests
+        run: npm test
+
+      - name: Download prices and build site
+        run: node scripts/build-static.js
+
+      - uses: actions/configure-pages@v5
+        if: github.ref_name == github.event.repository.default_branch
+
+      - uses: actions/upload-pages-artifact@v3
+        if: github.ref_name == github.event.repository.default_branch
+        with:
+          path: dist
+
+  deploy:
+    # Only the default branch publishes; pushes to other branches just run the tests and build.
+    if: github.ref_name == github.event.repository.default_branch
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
