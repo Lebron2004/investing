@@ -1,0 +1,13 @@
+{
+  "name": "stockwise",
+  "version": "1.0.0",
+  "description": "Stock tracker, buy/sell signal analyzer, position sizer, portfolio planner and trading academy.",
+  "type": "module",
+  "private": true,
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "start": "node server.js",
+    "demo": "DATA_SOURCE=demo node server.js",
+    "test": "node --test test/*.test.js"
+  }
+}
