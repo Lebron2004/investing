@@ -59,6 +59,18 @@ export async function getBatch(symbols) {
   return out;
 }
 
+// Pre-analyzed summaries for the whole universe (see lib/scan.js). Cached for the session.
+let scanPromise = null;
+export function getScan() {
+  scanPromise ??= staticSite.then(async (m) => {
+    const r = await fetch(m ? `data/scan.json?v=${encodeURIComponent(m.updated)}` : 'api/scan');
+    if (!r.ok) throw new Error('Could not load the market scan');
+    return (await r.json()).results;
+  });
+  scanPromise.catch(() => { scanPromise = null; });
+  return scanPromise;
+}
+
 export async function searchSymbols(q) {
   const manifest = await staticSite;
   if (manifest) {

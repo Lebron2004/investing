@@ -1,4 +1,4 @@
-import { getBatch, settings, saveSettings, money, pct, shares, esc, badge, demoNotice } from '../api.js';
+import { getScan, settings, saveSettings, money, pct, shares, esc, badge, demoNotice } from '../api.js';
 import { STOCKS } from '../lib/universe.js';
 import { allocate, buyList, positionSize, CORE_ETFS, RISK_PROFILES } from '../lib/sizing.js';
 
@@ -39,7 +39,7 @@ export function renderPlanner(app) {
     const out = app.querySelector('#plan-out');
     out.innerHTML = '<div class="loading">Pricing your plan…</div>';
     const etfs = CORE_ETFS[f.profile];
-    const items = await getBatch([...etfs.map((x) => x.symbol), ...STOCKS.map((x) => x.symbol)]);
+    const items = await getScan();
     out.innerHTML = buildPlan({ amount, profile: f.profile, horizon: f.horizon, fractional, items, etfs });
   });
   form.requestSubmit();
@@ -58,7 +58,11 @@ function buildPlan({ amount, profile, horizon, fractional, items, etfs }) {
 
   // Long-term picks: best long-term scores, equally weighted. Fewer picks for small accounts.
   const nPicks = alloc.picks.dollars < 1500 ? 2 : alloc.picks.dollars < 10000 ? 3 : 5;
-  const ltTop = [...stocks].filter((i) => i.analysis.longTerm.score >= 58).sort((a, b) => b.analysis.longTerm.score - a.analysis.longTerm.score).slice(0, nPicks);
+  // Best long-term scores, at most one per sector so the picks are diversified.
+  const ltTop = [];
+  for (const i of [...stocks].filter((x) => x.analysis.longTerm.score >= 58).sort((a, b) => b.analysis.longTerm.score - a.analysis.longTerm.score)) {
+    if (ltTop.length < nPicks && !ltTop.some((p) => p.sector === i.sector)) ltTop.push(i);
+  }
   const picks = ltTop.length
     ? buyList(alloc.picks.dollars, ltTop.map((i) => ({ symbol: i.symbol, name: i.name, weight: 1 / ltTop.length, price: i.analysis.price, rating: i.analysis.longTerm, add: i.analysis.ltPlan.tranches[1].price })), fractional)
     : { rows: [], leftover: alloc.picks.dollars };
@@ -96,7 +100,7 @@ function buildPlan({ amount, profile, horizon, fractional, items, etfs }) {
 
     <section class="card">
       <h2>2. Long-term picks <span class="muted small">${money(alloc.picks.dollars, 0)}</span></h2>
-      ${picks.rows.length ? `<p class="muted">The strongest long-term trends today. The share counts are your <strong>full target position</strong>: buy about 40% now and the rest on pullbacks near the "add more" price. Hold while they stay above their 200-day average.</p>
+      ${picks.rows.length ? `<p class="muted">The strongest long-term trends today, one per sector so you're not all-in on one industry. The share counts are your <strong>full target position</strong>: buy about 40% now and the rest on pullbacks near the "add more" price. Hold while they stay above their 200-day average.</p>
       ${table(picks.rows.map((r) => [`<a href="#/stock/${encodeURIComponent(r.symbol)}"><strong>${esc(r.symbol)}</strong></a><div class="sub">${esc(r.name)}</div>`, badge(r.rating), money(r.price), shares(r.shares), money(r.cost), money(r.add)]), ['Stock', 'Rating', 'Price', 'Shares', 'Cost', 'Add more near'])}`
         : '<p>No stocks pass the long-term filter right now, so this money goes to cash or extra index funds until something qualifies.</p>'}
     </section>

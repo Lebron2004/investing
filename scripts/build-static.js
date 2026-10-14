@@ -11,6 +11,7 @@ import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { UNIVERSE } from '../public/js/lib/universe.js';
 import { fetchHistory, dataFileName, SYMBOL_RE } from '../lib/market-data.js';
+import { summarize } from '../public/js/lib/scan.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const out = `${root}dist/`;
@@ -40,6 +41,8 @@ await mkdir(`${out}data/history`, { recursive: true });
 await writeFile(`${out}.nojekyll`, '');
 
 const manifest = { updated: new Date().toISOString(), symbols: [] };
+const scan = [];
+const inUniverse = new Set(UNIVERSE.map((u) => u.symbol));
 const counts = { live: 0, demo: 0, missing: 0 };
 const queue = [...symbols];
 
@@ -50,6 +53,9 @@ async function worker() {
       const data = await fetchHistory(symbol, { demoOnly, log: () => {} });
       await writeFile(`${out}data/history/${dataFileName(symbol)}`, JSON.stringify(data));
       manifest.symbols.push({ symbol, name: data.name, source: data.source });
+      if (inUniverse.has(symbol)) {
+        try { scan.push(summarize(data)); } catch (err) { console.warn(`::warning::${symbol}: ${err.message}`); }
+      }
       data.source === 'demo' ? counts.demo++ : counts.live++;
       console.log(`${symbol.padEnd(8)} ${data.source.padEnd(6)} ${data.candles.length} days`);
     } catch (err) {
@@ -62,6 +68,7 @@ await Promise.all(Array.from({ length: 4 }, worker));
 
 manifest.symbols.sort((a, b) => a.symbol.localeCompare(b.symbol));
 await writeFile(`${out}data/manifest.json`, JSON.stringify(manifest));
+await writeFile(`${out}data/scan.json`, JSON.stringify({ updated: manifest.updated, results: scan }));
 
 console.log(`\nBuilt ./dist: ${counts.live} live, ${counts.demo} demo, ${counts.missing} not found.`);
 if (!demoOnly && counts.demo > 0) {

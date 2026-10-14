@@ -11,6 +11,7 @@ import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { UNIVERSE } from './public/js/lib/universe.js';
 import { fetchHistory, searchYahoo, SYMBOL_RE } from './lib/market-data.js';
+import { summarize } from './public/js/lib/scan.js';
 
 const PORT = Number(process.env.PORT) || 3000;
 const DEMO_ONLY = process.env.DATA_SOURCE === 'demo';
@@ -49,6 +50,19 @@ async function search(q) {
   }
 }
 
+// Analyze the whole universe (a few at a time to stay polite to the data provider).
+async function scanAll() {
+  const queue = UNIVERSE.map((u) => u.symbol);
+  const results = [];
+  await Promise.all(Array.from({ length: 6 }, async () => {
+    while (queue.length) {
+      const s = queue.shift();
+      try { results.push(summarize(await history(s))); } catch { /* unknown symbol or too little history */ }
+    }
+  }));
+  return { updated: new Date().toISOString(), results };
+}
+
 function send(res, status, body, type = MIME['.json']) {
   res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store' });
   res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body));
@@ -82,6 +96,7 @@ async function handleApi(url, res) {
     return send(res, 200, { results: q ? await search(q) : [] });
   }
   if (p === '/api/universe') return send(res, 200, { results: UNIVERSE });
+  if (p === '/api/scan') return send(res, 200, await cached('scan', scanAll));
   return send(res, 404, { error: 'Not found' });
 }
 

@@ -97,3 +97,15 @@ test('buyList never overspends', () => {
   assert.equal(rows[1].shares, 7);
   assert.ok(leftover >= 0);
 });
+
+test('summarize drops the heavy indicator arrays and keeps what the pages need', async () => {
+  const { summarize } = await import('../public/js/lib/scan.js');
+  const candles = makeCandles(300, (i) => 50 * Math.exp(0.002 * i));
+  const s = summarize({ symbol: 'NVDA', name: 'x', source: 'yahoo', candles });
+  assert.equal(s.sector, 'Technology');
+  assert.equal(s.name, 'NVIDIA');
+  assert.equal(s.analysis.indicators, undefined);
+  assert.ok(s.analysis.oneMonth > 0);
+  assert.ok(s.analysis.shortTerm.score >= 0 && s.analysis.plan.stop > 0);
+  assert.ok(JSON.stringify(s).length < 5000, 'summary stays small');
+});
