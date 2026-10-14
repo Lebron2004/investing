@@ -27,7 +27,7 @@ export const UNIVERSE = [
   ...S('Communication Services', [
     ['GOOGL', 'Alphabet'], ['META', 'Meta Platforms'], ['NFLX', 'Netflix'], ['DIS', 'Walt Disney'], ['TMUS', 'T-Mobile US'],
     ['VZ', 'Verizon'], ['T', 'AT&T'], ['CMCSA', 'Comcast'], ['SPOT', 'Spotify'], ['RBLX', 'Roblox'],
-    ['EA', 'Electronic Arts'], ['TTWO', 'Take-Two Interactive'],
+    ['CHTR', 'Charter Communications'], ['TTWO', 'Take-Two Interactive'],
   ]),
   ...S('Consumer Discretionary', [
     ['AMZN', 'Amazon'], ['TSLA', 'Tesla'], ['HD', 'Home Depot'], ['MCD', 'McDonald\'s'], ['NKE', 'Nike'],
