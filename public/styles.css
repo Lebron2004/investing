@@ -66,7 +66,7 @@ code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; font-
 }
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 1.1rem; color: var(--text); }
 .brand:hover { text-decoration: none; }
-.search { position: relative; flex: 1 1 220px; max-width: 340px; }
+.search { position: relative; flex: 1 1 200px; max-width: 300px; }
 .search input { width: 100%; }
 .search-results {
   position: absolute; top: calc(100% + 4px); left: 0; right: 0; list-style: none; margin: 0; padding: 4px;
@@ -479,3 +479,19 @@ tr.clickable:hover td { background: var(--surface-2); }
 .chart-tip .k-acct { color: var(--accent); }
 .chart-tip .k-bench { color: var(--muted); }
 @media (max-width: 860px) { .big-stats.five { grid-template-columns: repeat(2, 1fr); } }
+
+/* live price status */
+.live-pill {
+  display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: .78rem; font-weight: 600; white-space: nowrap;
+  color: var(--muted); background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 4px 10px; cursor: default;
+}
+.live-pill[hidden] { display: none; }
+.live-pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+.live-pill.live { color: var(--up); }
+.live-pill.live .dot { background: var(--up); animation: pulse 1.6s infinite; }
+.live-pill.pending { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); cursor: pointer; }
+.live-pill.pending .dot { background: var(--accent-ink); }
+@media (prefers-reduced-motion: reduce) { .live-pill .dot { animation: none !important; } }
+.live-setup summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
+.live-setup input { width: 100%; margin-top: 4px; }
+.live-setup p { margin: 6px 0; }

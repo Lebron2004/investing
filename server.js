@@ -16,7 +16,7 @@ import { summarize } from './public/js/lib/scan.js';
 const PORT = Number(process.env.PORT) || 3000;
 const DEMO_ONLY = process.env.DATA_SOURCE === 'demo';
 const PUBLIC_DIR = fileURLToPath(new URL('./public/', import.meta.url));
-const CACHE_MS = 10 * 60 * 1000;
+const CACHE_MS = 2 * 60 * 1000; // prices refresh every 2 minutes
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -100,6 +100,8 @@ async function handleApi(url, res) {
     const q = (url.searchParams.get('q') || '').trim().slice(0, 40);
     return send(res, 200, { results: q ? await search(q) : [] });
   }
+  // Pages poll this to learn when fresher prices are available (they change every CACHE_MS).
+  if (p === '/api/status') return send(res, 200, { updated: new Date(Math.floor(Date.now() / CACHE_MS) * CACHE_MS).toISOString() });
   if (p === '/api/universe') return send(res, 200, { results: UNIVERSE });
   if (p === '/api/scan') return send(res, 200, await cached('scan', scanAll));
   return send(res, 404, { error: 'Not found' });

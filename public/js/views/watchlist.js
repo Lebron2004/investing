@@ -31,6 +31,11 @@ export async function renderWatchlist(app) {
           </select>
         </label>
         <label class="check"><input type="checkbox" name="fractional" ${s.fractional ? 'checked' : ''}> My broker allows fractional shares</label>
+        <details class="live-setup">
+          <summary>⚡ Real-time prices ${s.finnhubKey ? '<span class="badge up">On</span>' : '<span class="muted small">(optional, free)</span>'}</summary>
+          <p class="small muted">Prices normally refresh every ~15 minutes. For live prices that update every 30 seconds on the pages you open, get a free API key at <a href="https://finnhub.io/register" target="_blank" rel="noopener">finnhub.io</a> (sign up → Dashboard → copy your API key) and paste it here. It's saved only in this browser.</p>
+          <input name="finnhubKey" type="password" autocomplete="off" spellcheck="false" placeholder="Paste Finnhub API key" value="${esc(s.finnhubKey || '')}" aria-label="Finnhub API key">
+        </details>
         <p class="hint" id="saved-hint">Used to size every buy and sell plan on the site.</p>
       </form>
     </section>
@@ -50,7 +55,7 @@ export async function renderWatchlist(app) {
   const form = app.querySelector('#account-form');
   form.addEventListener('change', () => {
     const fd = new FormData(form);
-    saveSettings({ account: Number(fd.get('account')) || 10000, profile: fd.get('profile'), fractional: fd.get('fractional') === 'on' });
+    saveSettings({ account: Number(fd.get('account')) || 10000, profile: fd.get('profile'), fractional: fd.get('fractional') === 'on', finnhubKey: String(fd.get('finnhubKey') || '').trim() });
     const hint = app.querySelector('#saved-hint');
     hint.textContent = 'Saved ✓';
     setTimeout(() => (hint.textContent = 'Used to size every buy and sell plan on the site.'), 1500);

@@ -7,7 +7,7 @@
 //
 // Symbols = the built-in universe + anything listed in symbols.txt.
 
-import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { UNIVERSE } from '../public/js/lib/universe.js';
 import { fetchHistory, fundamentalsFor, dataFileName, SYMBOL_RE } from '../lib/market-data.js';
@@ -39,11 +39,40 @@ await rm(out, { recursive: true, force: true });
 await cp(`${root}public/`, out, { recursive: true });
 await mkdir(`${out}data/history`, { recursive: true });
 await writeFile(`${out}.nojekyll`, '');
+await stampVersion(process.env.GITHUB_SHA?.slice(0, 10) || Date.now().toString(36));
+
+// Browsers (and GitHub Pages' 10-minute cache) can keep old copies of the scripts after a deploy,
+// which shows up as "Page not found" for brand-new pages. Adding ?v=<build> to every script and
+// stylesheet URL makes each deploy load fresh files.
+async function stampVersion(v) {
+  const files = (await readdir(`${out}js`, { recursive: true })).filter((f) => f.endsWith('.js'));
+  for (const f of files) {
+    const path = `${out}js/${f}`;
+    const src = await readFile(path, 'utf8');
+    await writeFile(path, src.replace(/(\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)(['"])(\.{1,2}\/[^'"?]+\.js)\2/g, `$1$2$3?v=${v}$2`));
+  }
+  const html = await readFile(`${out}index.html`, 'utf8');
+  await writeFile(`${out}index.html`, html.replace('href="styles.css"', `href="styles.css?v=${v}"`).replace('src="js/app.js"', `src="js/app.js?v=${v}"`));
+}
 
 const manifest = { updated: new Date().toISOString(), symbols: [] };
 const scan = [];
 const inUniverse = new Set(UNIVERSE.map((u) => u.symbol));
 const counts = { live: 0, demo: 0, missing: 0, fundamentals: 0 };
+
+// Fundamentals barely change during a day, so they're cached between runs (GitHub Actions cache)
+// and re-downloaded about once a day. If Yahoo fails, a cached copy up to a week old is used.
+const FUND_CACHE = `${root}.cache/fundamentals.json`;
+let fundCache = {};
+try { fundCache = JSON.parse(await readFile(FUND_CACHE, 'utf8')); } catch { /* first run */ }
+const age = (f) => (f?.fetched ? Date.now() - Date.parse(f.fetched) : Infinity);
+async function fundamentals(symbol, data) {
+  const cached = fundCache[symbol];
+  if (!demoOnly && cached && age(cached) < 20 * 3600e3) return cached;
+  const f = await fundamentalsFor(symbol, data, { demoOnly });
+  if (f?.source === 'yahoo') { fundCache[symbol] = f; return f; }
+  return cached && age(cached) < 7 * 864e5 ? cached : f;
+}
 const loaded = new Map();
 const queue = [...symbols];
 
@@ -52,7 +81,7 @@ async function worker() {
     const symbol = queue.shift();
     try {
       const data = await fetchHistory(symbol, { demoOnly, log: () => {} });
-      data.fundamentals = await fundamentalsFor(symbol, data, { demoOnly });
+      data.fundamentals = await fundamentals(symbol, data);
       await writeFile(`${out}data/history/${dataFileName(symbol)}`, JSON.stringify(data));
       manifest.symbols.push({ symbol, name: data.name, source: data.source });
       loaded.set(symbol, data);
@@ -75,6 +104,10 @@ for (const [symbol, data] of loaded) {
 }
 
 manifest.symbols.sort((a, b) => a.symbol.localeCompare(b.symbol));
+if (!demoOnly) {
+  await mkdir(`${root}.cache`, { recursive: true });
+  await writeFile(FUND_CACHE, JSON.stringify(fundCache));
+}
 await writeFile(`${out}data/manifest.json`, JSON.stringify(manifest));
 await writeFile(`${out}data/scan.json`, JSON.stringify({ updated: manifest.updated, results: scan }));
 

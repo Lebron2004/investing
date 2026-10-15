@@ -8,6 +8,8 @@ const memo = new Map();
 export const staticSite = fetch('data/manifest.json', { cache: 'no-cache' })
   .then((r) => (r.ok ? r.json() : null))
   .catch(() => null);
+let dataVersion = null; // changes whenever new prices are published
+staticSite.then((m) => { dataVersion = m?.updated ?? null; });
 
 // Mirrors dataFileName() in lib/market-data.js.
 const dataFileName = (symbol) => `${symbol.toUpperCase().replace(/[^A-Z0-9.-]/g, '_')}.json`;
@@ -15,7 +17,7 @@ const dataFileName = (symbol) => `${symbol.toUpperCase().replace(/[^A-Z0-9.-]/g,
 async function loadHistory(symbol, range) {
   const manifest = await staticSite;
   if (manifest) {
-    const r = await fetch(`data/history/${dataFileName(symbol)}?v=${encodeURIComponent(manifest.updated)}`);
+    const r = await fetch(`data/history/${dataFileName(symbol)}?v=${encodeURIComponent(dataVersion || manifest.updated)}`);
     if (!r.ok) {
       throw new Error(`${symbol} isn't tracked on this site yet. To add it, put ${symbol} on its own line in symbols.txt in your GitHub repo and commit. Prices appear after the next update (a few minutes).`);
     }
@@ -29,11 +31,85 @@ async function loadHistory(symbol, range) {
 
 export async function getHistory(symbol, range = '2y') {
   const key = `${symbol}:${range}`;
-  if (memo.has(key)) return memo.get(key);
-  const p = loadHistory(symbol, range);
-  memo.set(key, p);
-  p.catch(() => memo.delete(key));
-  return p;
+  if (!memo.has(key)) {
+    const p = loadHistory(symbol, range);
+    memo.set(key, p);
+    p.catch(() => memo.delete(key));
+  }
+  return withLive(await memo.get(key));
+}
+
+// --- Freshness -----------------------------------------------------------------
+// Asks whether newer prices exist than the ones this page loaded. Returns the new version or null.
+export async function checkForNewData() {
+  try {
+    const static_ = await staticSite;
+    const r = await fetch(static_ ? 'data/manifest.json' : 'api/status', { cache: 'no-store' });
+    if (!r.ok) return null;
+    const v = (await r.json()).updated;
+    if (v && v !== dataVersion) return v;
+  } catch { /* offline: try again later */ }
+  return null;
+}
+
+// Forget cached prices so the next render downloads fresh ones.
+export function useDataVersion(v) {
+  dataVersion = v;
+  memo.clear();
+  scanPromise = null;
+}
+export const lastUpdated = () => dataVersion;
+
+// --- Live quotes (optional, needs a free Finnhub API key) -------------------------
+// Finnhub's /quote gives the current price, day high/low and open in real time (US stocks & ETFs,
+// 60 requests/minute on the free plan). We patch today's candle with it.
+const quoteCache = new Map();
+export const liveStatus = { enabled: false, ok: null, at: null, error: null };
+
+async function liveQuote(symbol) {
+  const key = settings().finnhubKey;
+  liveStatus.enabled = !!key;
+  if (!key) return null;
+  const hit = quoteCache.get(symbol);
+  if (hit?.pending) return hit.pending;
+  if (hit && Date.now() - hit.at < (hit.q ? 30000 : 60000)) return hit.q;
+  const p = (async () => {
+    try {
+      const r = await fetch(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(symbol)}&token=${encodeURIComponent(key)}`);
+      if (r.status === 401 || r.status === 403) throw new Error('Finnhub rejected the API key');
+      if (r.status === 429) throw new Error('Finnhub rate limit reached, slowing down');
+      if (!r.ok) throw new Error(`Finnhub error ${r.status}`);
+      const q = await r.json();
+      if (!(q.c > 0) || !q.t) return null; // unknown symbol
+      Object.assign(liveStatus, { ok: true, at: q.t * 1000, error: null });
+      return q;
+    } catch (err) {
+      Object.assign(liveStatus, { ok: false, error: err.message });
+      return null;
+    }
+  })();
+  quoteCache.set(symbol, { at: Date.now(), q: null, pending: p });
+  const q = await p;
+  quoteCache.set(symbol, { at: Date.now(), q });
+  return q;
+}
+
+const dayOf = (t) => new Date(t).toISOString().slice(0, 10);
+
+// Returns a copy of the history with today's candle updated (or added) from the live quote.
+async function withLive(data) {
+  if (!settings().finnhubKey || !data?.candles?.length) return data;
+  const q = await liveQuote(data.symbol);
+  if (!q) return data;
+  const t = q.t * 1000;
+  const candles = data.candles.slice();
+  const last = candles[candles.length - 1];
+  if (dayOf(last.t) === dayOf(t)) {
+    candles[candles.length - 1] = { ...last, close: q.c, high: Math.max(last.high, q.h || q.c), low: Math.min(last.low, q.l || q.c) };
+  } else if (t > last.t) {
+    candles.push({ t, open: q.o || q.c, high: q.h || q.c, low: q.l || q.c, close: q.c, volume: 0 });
+  }
+  return { ...data, candles, live: { price: q.c, t } };
 }
 
 // The S&P 500 (SPY) is the yardstick for relative strength. Optional: analysis works without it.
@@ -56,9 +132,13 @@ export async function getBatch(symbols) {
   }
   const benchmark = await getBenchmark();
   const out = [];
-  for (const [symbol, data] of entries) {
+  const isStatic = !!(await staticSite);
+  for (let [symbol, data] of entries) {
     if (data.error) continue;
-    memo.set(`${symbol}:2y`, Promise.resolve(data));
+    if (!isStatic) { // static entries came through getHistory, which already cached and patched them
+      memo.set(`${symbol}:2y`, Promise.resolve(data));
+      data = await withLive(data);
+    }
     try { out.push({ ...data, analysis: analyze(data.candles, ctxFor(data, benchmark)) }); } catch { /* too little history */ }
   }
   return out;
@@ -68,7 +148,7 @@ export async function getBatch(symbols) {
 let scanPromise = null;
 export function getScan() {
   scanPromise ??= staticSite.then(async (m) => {
-    const r = await fetch(m ? `data/scan.json?v=${encodeURIComponent(m.updated)}` : 'api/scan');
+    const r = await fetch(m ? `data/scan.json?v=${encodeURIComponent(dataVersion || m.updated)}` : 'api/scan');
     if (!r.ok) throw new Error('Could not load the market scan');
     return (await r.json()).results;
   });

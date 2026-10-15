@@ -12,10 +12,11 @@ on:
   push:
   workflow_dispatch:
   schedule:
-    # Mon–Fri, in UTC: roughly 10:45am, 12:45pm, 2:45pm and 4:45pm New York time,
-    # plus a run after the close. Schedules only run on the default branch.
-    - cron: '45 14,16,18 * * 1-5'
-    - cron: '45 20 * * 1-5'
+    # Every 15 minutes while the US market is open (9:30am–4pm New York = 13:30–21:00 UTC
+    # across daylight-saving changes), plus one run after the close for final prices.
+    # GitHub can start scheduled runs a few minutes late when it's busy.
+    # Schedules only run on the default branch.
+    - cron: '*/15 13-20 * * 1-5'
     - cron: '30 22 * * 1-5'
 
 permissions:
@@ -39,6 +40,13 @@ jobs:
 
       - name: Run tests
         run: npm test
+
+      # Company fundamentals are cached between runs and refreshed about once a day.
+      - uses: actions/cache@v4
+        with:
+          path: .cache
+          key: fundamentals-${{ github.run_id }}
+          restore-keys: fundamentals-
 
       - name: Download prices and build site
         run: node scripts/build-static.js

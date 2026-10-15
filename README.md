@@ -25,7 +25,12 @@ A stock-tracking and trading-education site:
 2. Open the **Actions** tab, pick **Deploy site**, and click **Run workflow** (or push any commit).
 3. After a minute or two the site is live at `https://<your-username>.github.io/<repo-name>/`.
 
-GitHub Pages can only host files and can't run `server.js`. So the workflow in `.github/workflows/deploy.yml` downloads fresh daily prices and publishes them with the site. It runs on every push and automatically about 5 times each trading day.
+GitHub Pages can only host files and can't run `server.js`. So the workflow in `.github/workflows/deploy.yml` downloads fresh prices and publishes them with the site. It runs on every push and **every 15 minutes while the market is open**, plus once after the close. Company fundamentals are cached and refreshed about once a day.
+
+**Staying fresh in the browser:**
+- Open pages check for new prices every minute and update themselves.
+- If you're typing (an order, a form), a **New prices · Refresh** button appears instead, so nothing gets wiped.
+- For **real-time prices**, paste a free [Finnhub](https://finnhub.io/register) API key under *Your account → Real-time prices* on the Watchlist page. The stocks on the page you're viewing then update every ~30 seconds, and practice trades fill at the live price.
 
 **Tracking more stocks:** the site includes 133 big stocks plus 17 ETFs (broad market and the 11 sector funds). To add others (for example, ones you own), list them in [`symbols.txt`](symbols.txt), one per line, and commit. They show up after the next run.
 
