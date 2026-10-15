@@ -410,6 +410,7 @@ export const MODULES = [
 <li><strong>Top Ideas</strong>: the strongest short-term and long-term setups from the scan.</li>
 <li><strong>Stock page</strong>: chart, both scores <em>with the reasons behind every point</em>, buy zone, stop, targets, how many shares to buy, and when to sell each part.</li>
 <li><strong>Position Sizer</strong>: run the numbers on any trade idea of your own.</li>
+<li><strong>Trading Class</strong> (top of the Academy): walk through a full trade on a real past chart, step by step, with a coach.</li>
 <li><strong>Practice</strong>: a fake-money account at real prices. Practice entries, stop-losses and selling plans, get a coach grade on every buy, and see if you can beat the S&amp;P 500 before risking real money.</li>
 </ol>
 <div class="callout">Short-term scores read the chart and the earnings calendar. Long-term scores add company fundamentals. Neither reads the news, and fundamentals come from public data that can lag. Treat a high score as "worth researching", not "guaranteed to go up".</div>`,

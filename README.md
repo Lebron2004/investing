@@ -15,6 +15,9 @@ A stock-tracking and trading-education site:
   - A coach grades every buy on size, stop-loss, signals and earnings.
   - Positions, history, a report card, and your account charted against the S&P 500.
 - **Sizer & Trade Tracker**: the 1%-risk calculator with a scale-out selling plan. Click *Track this trade* and it replays every daily candle since your buy date. It marks when targets or the stop were hit, trails the stop as you profit, and tells you each day to **Hold**, **Watch**, or **Sell N shares**, with a chart and a day-by-day log.
+- **Trading Class** (in the Academy): a hands-on, step-by-step class on a real historical chart with the stock name hidden.
+  - You read the trend, name the setup, place a stop, pick a target and size the position, with coach feedback and a *Show me how* button on every step.
+  - Then you trade it day by day and get a results review with an R-multiple, a checklist, and a comparison against following the plan exactly.
 - **Academy**: 18 lessons in 6 modules (basics, long-term investing, charts, indicators, risk management, building a plan), each with a quiz and progress tracking.
 
 > Educational tool, not financial advice. Signals use price history plus company fundamentals (no news).
@@ -60,6 +63,7 @@ If Yahoo Finance can't be reached, the server falls back to simulated data and t
 | `lib/fundamentals.js` | Company fundamentals (P/E, growth, margins, debt, analyst targets, earnings date) from Yahoo |
 | `public/js/lib/scan.js` | Compact per-stock summaries for Top Ideas / Planner (`/api/scan` or `data/scan.json`) |
 | `public/js/lib/paper.js` | Practice-trading engine: fills, limit/stop orders, average cost, equity curve, coach |
+| `public/js/lib/classroom.js` | Trading Class: picks historical setups and grades each decision |
 | `public/js/lib/tracker.js` | Candle-by-candle trade replay (targets, closing stop, trailing stop) |
 | `public/js/lib/indicators.js` | SMA, EMA, RSI, MACD, ATR, Bollinger, pivots |
 | `public/js/lib/analysis.js` | Scoring rules, support/resistance, trade and long-term plans |
