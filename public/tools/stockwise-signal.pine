@@ -1,0 +1,72 @@
+// StockWise Signal Line — TradingView indicator (Pine Script v5)
+// https://lebron2004.github.io/investing/#/tools
+//
+// HOW TO READ IT
+//   Green line UNDER the candles  → uptrend: HOLD. The line is your trailing stop-loss.
+//   Red line ABOVE the candles    → downtrend: SELL / stay out.
+//   BUY label   → the line just flipped up (and price is above its 200-day average).
+//   WAIT label  → flipped up, but the long-term trend is still down: be careful.
+//   SELL label  → the line just flipped down. Exit or tighten up.
+//   Orange dot  → overheated (RSI above 75): don't chase; consider taking some profit.
+//
+// TURN IT ON / OFF: hover the indicator name at the top-left of the chart and click the eye icon.
+// SETTINGS: click the gear icon next to the name.
+//
+// Educational tool, not financial advice.
+
+//@version=5
+indicator("StockWise Signal Line", shorttitle="StockWise", overlay=true, max_labels_count=500)
+
+// ---- Settings ----
+atrLen    = input.int(14, "ATR length", minval=1, group="Signal line", tooltip="How many bars to average the daily range over.")
+mult      = input.float(3.0, "ATR multiplier", minval=0.5, step=0.1, group="Signal line", tooltip="Bigger = line further from price, fewer signals. Smaller = faster, more signals.")
+useTrend  = input.bool(true, "Only BUY above the long-term average", group="Filters", tooltip="When the line flips up below this average, it shows WAIT instead of BUY.")
+trendLen  = input.int(200, "Long-term average length", minval=10, group="Filters")
+showLbl   = input.bool(true, "Show BUY / SELL / WAIT labels", group="Display")
+showHot   = input.bool(true, "Show overheated dots (RSI > 75)", group="Display")
+showBg    = input.bool(false, "Tint the background green / red", group="Display")
+showMAs   = input.bool(false, "Show 20 / 50 / 200 averages", group="Display")
+showPanel = input.bool(true, "Show status panel", group="Display")
+
+// ---- Calculation (same rules as the StockWise website) ----
+[stLine, dirRaw] = ta.supertrend(mult, atrLen)
+up       = dirRaw < 0                      // TradingView: negative direction = uptrend
+trendMA  = ta.sma(close, trendLen)
+trendOk  = not useTrend or (not na(trendMA) and close > trendMA)
+r        = ta.rsi(close, 14)
+flipUp   = dirRaw < 0 and dirRaw[1] > 0
+flipDown = dirRaw > 0 and dirRaw[1] < 0
+buySig   = flipUp and trendOk
+waitSig  = flipUp and not trendOk
+sellSig  = flipDown
+hotSig   = up and r > 75 and r[1] <= 75
+
+// ---- Drawing ----
+plot(up ? stLine : na, "Trailing stop (uptrend)", color=color.new(#0f8a4f, 0), linewidth=2, style=plot.style_linebr)
+plot(up ? na : stLine, "Resistance (downtrend)", color=color.new(#c8312b, 0), linewidth=2, style=plot.style_linebr)
+plotshape(showLbl and buySig, "BUY", shape.labelup, location.belowbar, color.new(#0f8a4f, 0), text="BUY", textcolor=color.white, size=size.small)
+plotshape(showLbl and sellSig, "SELL", shape.labeldown, location.abovebar, color.new(#c8312b, 0), text="SELL", textcolor=color.white, size=size.small)
+plotshape(showLbl and waitSig, "WAIT", shape.labelup, location.belowbar, color.new(#808080, 0), text="WAIT", textcolor=color.white, size=size.tiny)
+plotshape(showHot and hotSig, "Overheated", shape.circle, location.abovebar, color.new(#e08a00, 0), size=size.tiny)
+bgcolor(showBg ? (up ? color.new(#0f8a4f, 92) : color.new(#c8312b, 92)) : na, title="Trend tint")
+plot(showMAs ? ta.sma(close, 20) : na, "20-day average", color=color.new(#2f6fdf, 0))
+plot(showMAs ? ta.sma(close, 50) : na, "50-day average", color=color.new(#d9822b, 0))
+plot(showMAs ? trendMA : na, "Long-term average", color=color.new(#8b47c9, 0))
+
+// ---- Status panel (top right) ----
+var table panel = table.new(position.top_right, 2, 3, border_width=1, frame_color=color.new(#808080, 50), frame_width=1)
+if showPanel and barstate.islast
+    status   = up ? (buySig ? "BUY" : trendOk ? "HOLD" : "HOLD (weak trend)") : (sellSig ? "SELL" : "SELL / STAY OUT")
+    stColor  = up ? (trendOk ? color.new(#0f8a4f, 0) : color.new(#e08a00, 0)) : color.new(#c8312b, 0)
+    distPct  = (close - stLine) / close * 100
+    table.cell(panel, 0, 0, "StockWise", text_color=color.white, bgcolor=color.new(#0f766e, 0))
+    table.cell(panel, 1, 0, status, text_color=color.white, bgcolor=stColor)
+    table.cell(panel, 0, 1, up ? "Stop" : "Flips up above", text_color=color.gray)
+    table.cell(panel, 1, 1, str.tostring(stLine, format.mintick), text_color=color.gray)
+    table.cell(panel, 0, 2, "Distance", text_color=color.gray)
+    table.cell(panel, 1, 2, str.tostring(distPct, "#.#") + "%", text_color=color.gray)
+
+// ---- Alerts (Create Alert → Condition: StockWise Signal Line) ----
+alertcondition(buySig, "StockWise BUY", "StockWise BUY on {{ticker}} at {{close}}")
+alertcondition(sellSig, "StockWise SELL", "StockWise SELL on {{ticker}} at {{close}}")
+alertcondition(waitSig, "StockWise WAIT", "StockWise: {{ticker}} flipped up below its long-term average (WAIT) at {{close}}")

@@ -1,6 +1,7 @@
-import { getAnalysis, settings, money, pct, num, shares, toneOf, esc, badge, scoreBar, demoNotice, gradeChips, bigMoney } from '../api.js';
+import { getAnalysis, settings, saveSettings, money, pct, num, shares, toneOf, esc, badge, scoreBar, demoNotice, gradeChips, bigMoney } from '../api.js';
 import { positionSize, sellPlan, RISK_PROFILES } from '../lib/sizing.js';
 import { mountChart } from '../chart.js';
+import { signalLine } from '../lib/signal.js';
 import { getWatchlist, toggleWatch } from './watchlist.js';
 
 const isBuy = (r) => r.score >= 58;
@@ -56,7 +57,13 @@ export async function renderAnalyze(app, symbol) {
           <button data-bars="63">3M</button><button data-bars="126" class="on">6M</button><button data-bars="252">1Y</button><button data-bars="520">2Y</button>
         </div>
       </div>
-      <div class="legend"><span class="k ma20">20-day</span><span class="k ma50">50-day</span><span class="k ma200">200-day</span><span class="k buy">Buy</span><span class="k stop">Stop</span><span class="k tgt">Targets</span></div>
+      <div class="chart-tools">
+        <label class="switch"><input type="checkbox" id="toggle-signal" ${s.signalLine !== false ? 'checked' : ''}><span class="slider"></span>Signal line</label>
+        <label class="switch"><input type="checkbox" id="toggle-plan" ${s.planLines !== false ? 'checked' : ''}><span class="slider"></span>Plan lines</label>
+        <span id="signal-chip"></span>
+        <a class="small" href="#/tools">Get this line for TradingView / thinkorswim →</a>
+      </div>
+      <div class="legend" id="chart-legend"></div>
       <div id="chart" class="chart-box"></div>
     </section>
 
@@ -142,6 +149,35 @@ export async function renderAnalyze(app, symbol) {
     ...a.plan.targets.map((p, i) => ({ price: p, label: `T${i + 1}`, tone: 'tgt' })),
   ];
   const chart = mountChart(app.querySelector('#chart'), { candles: data.candles, ind: a.indicators, levels, bars: 126 });
+
+  // StockWise Signal Line overlay (same rules as the TradingView / thinkorswim versions on the Tools page).
+  const sig = signalLine(data.candles);
+  const sigPaths = [
+    { series: sig.line.map((v, i) => (sig.dir[i] === 1 ? v : null)), cls: 'sig-up' },
+    { series: sig.line.map((v, i) => (sig.dir[i] === -1 ? v : null)), cls: 'sig-down' },
+  ];
+  const sigMarkers = sig.signals.map((x) => {
+    const c = data.candles[x.i];
+    if (x.type === 'buy') return { i: x.i, price: c.low, label: 'BUY', tone: 'buy', up: true };
+    if (x.type === 'wait') return { i: x.i, price: c.low, label: 'WAIT', tone: 'warn', up: true };
+    if (x.type === 'sell') return { i: x.i, price: c.high, label: 'SELL', tone: 'stop' };
+    return { i: x.i, price: c.high, label: '', title: 'Overheated (RSI above 75)', tone: 'warn' };
+  });
+  const st = sig.status;
+  app.querySelector('#signal-chip').innerHTML = st.stop == null ? '' : `<span class="signal-chip ${st.action}" title="StockWise Signal Line: ${st.action === 'sell' ? 'line is above price (downtrend)' : 'line is below price (uptrend)'}">Signal: <strong>${esc(st.label)}</strong> · ${st.action === 'sell' ? 'flips up above' : 'stop'} ${money(st.stop)}</span>`;
+  const applyOverlays = () => {
+    const showSig = app.querySelector('#toggle-signal').checked;
+    const showPlan = app.querySelector('#toggle-plan').checked;
+    chart.update({ levels: showPlan ? levels : [], paths: showSig ? sigPaths : [], markers: showSig ? sigMarkers : [] });
+    app.querySelector('#signal-chip').hidden = !showSig;
+    app.querySelector('#chart-legend').innerHTML = '<span class="k ma20">20-day</span><span class="k ma50">50-day</span><span class="k ma200">200-day</span>'
+      + (showSig ? '<span class="k sig-up">Signal: hold (uptrend)</span><span class="k sig-down">Signal: sell (downtrend)</span>' : '')
+      + (showPlan ? '<span class="k buy">Buy</span><span class="k stop">Stop</span><span class="k tgt">Targets</span>' : '');
+    saveSettings({ signalLine: showSig, planLines: showPlan });
+  };
+  app.querySelector('#toggle-signal').addEventListener('change', applyOverlays);
+  app.querySelector('#toggle-plan').addEventListener('change', applyOverlays);
+  applyOverlays();
   app.querySelector('#range').addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (!b) return;

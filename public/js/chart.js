@@ -6,13 +6,15 @@ const NS = 'http://www.w3.org/2000/svg';
 // opts.paths:   [{ series (aligned with candles, null = gap), cls }] extra lines, e.g. a trailing stop
 // opts.markers: [{ i (candle index), price, label, tone: 'buy'|'sell'|'stop'|'warn' }]
 export function mountChart(container, { candles, ind, levels = [], bars = 126, paths = [], markers = [] }) {
-  const state = { bars };
-  const draw = () => render(container, candles, ind, levels, state.bars, paths, markers);
+  const state = { bars, levels, paths, markers };
+  const draw = () => render(container, candles, ind, state.levels, state.bars, state.paths, state.markers);
   const ro = new ResizeObserver(() => draw());
   ro.observe(container);
   draw();
   return {
     setBars(n) { state.bars = n; draw(); },
+    // Replace any of { levels, paths, markers } and redraw.
+    update(next) { Object.assign(state, next); draw(); },
     destroy() { ro.disconnect(); },
   };
 }
@@ -105,7 +107,7 @@ function render(container, candles, ind, levels, bars, paths = [], markers = [])
   for (const m of markers) {
     if (m.i < start || m.price < lo || m.price > hi) continue;
     const mx = x(m.i), my = y(m.price);
-    const up = m.tone === 'buy';
+    const up = m.up ?? m.tone === 'buy';
     const tri = up ? `${mx},${my + 3} ${mx - 6},${my + 13} ${mx + 6},${my + 13}` : `${mx},${my - 3} ${mx - 6},${my - 13} ${mx + 6},${my - 13}`;
     html += `<polygon class="marker ${m.tone}" points="${tri}"><title>${m.title || m.label}</title></polygon>`;
     if (m.label) html += `<text class="marker-label ${m.tone}" x="${mx}" y="${up ? my + 25 : my - 17}" text-anchor="middle">${m.label}</text>`;

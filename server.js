@@ -25,6 +25,8 @@ const MIME = {
   '.json': 'application/json; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
+  '.pine': 'text/plain; charset=utf-8',
+  '.ts': 'text/plain; charset=utf-8',
 };
 
 const cache = new Map();
