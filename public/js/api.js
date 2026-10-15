@@ -108,7 +108,7 @@ export const money = (n, digits = 2) =>
 export const num = (n, d = 2) => (n == null || Number.isNaN(n) ? '—' : n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }));
 export const pct = (n, d = 1, sign = false) => (n == null || Number.isNaN(n) ? '—' : `${sign && n > 0 ? '+' : ''}${(n * 100).toFixed(d)}%`);
 export const shares = (n) => (Number.isInteger(n) ? n.toLocaleString('en-US') : n.toFixed(3));
-export const toneOf = (n) => (n > 0 ? 'up' : n < 0 ? 'down' : 'flat');
+export const toneOf = (n) => (n > 0 ? 'up' : n < 0 ? 'down' : '');
 
 export function esc(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));

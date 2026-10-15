@@ -10,6 +10,10 @@ A stock-tracking and trading-education site:
   - *Long-term* is half price trend, half business fundamentals: quality, growth, value and analyst targets, graded A–F from Yahoo Finance company data.
   - The rest of Top Ideas: A *Sector strength* panel ranks the sectors by their sector ETF (XLK, XLF, XLV, …). Sector filters, top picks, and a sortable table of every stock (price, day, 1-month, 1-year, score).
 - **Money Planner**: enter how much money you have, your risk style and goal. You get a split into cash, index funds, long-term picks and swing trades, with exact share counts.
+- **Practice Trading** (paper trading): open a fake-money account and trade real stocks at real prices.
+  - Market, limit and stop-loss orders, which fill when later daily candles reach them, gaps included.
+  - A coach grades every buy on size, stop-loss, signals and earnings.
+  - Positions, history, a report card, and your account charted against the S&P 500.
 - **Sizer & Trade Tracker**: the 1%-risk calculator with a scale-out selling plan. Click *Track this trade* and it replays every daily candle since your buy date. It marks when targets or the stop were hit, trails the stop as you profit, and tells you each day to **Hold**, **Watch**, or **Sell N shares**, with a chart and a day-by-day log.
 - **Academy**: 18 lessons in 6 modules (basics, long-term investing, charts, indicators, risk management, building a plan), each with a quiz and progress tracking.
 
@@ -50,6 +54,7 @@ If Yahoo Finance can't be reached, the server falls back to simulated data and t
 | `public/js/lib/portfolio.js` | Broker CSV import and the portfolio action rules |
 | `lib/fundamentals.js` | Company fundamentals (P/E, growth, margins, debt, analyst targets, earnings date) from Yahoo |
 | `public/js/lib/scan.js` | Compact per-stock summaries for Top Ideas / Planner (`/api/scan` or `data/scan.json`) |
+| `public/js/lib/paper.js` | Practice-trading engine: fills, limit/stop orders, average cost, equity curve, coach |
 | `public/js/lib/tracker.js` | Candle-by-candle trade replay (targets, closing stop, trailing stop) |
 | `public/js/lib/indicators.js` | SMA, EMA, RSI, MACD, ATR, Bollinger, pivots |
 | `public/js/lib/analysis.js` | Scoring rules, support/resistance, trade and long-term plans |

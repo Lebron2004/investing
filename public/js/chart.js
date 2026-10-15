@@ -149,3 +149,65 @@ function render(container, candles, ind, levels, bars, paths = [], markers = [])
 
   container.replaceChildren(svg, tip);
 }
+
+// Line chart of account value vs. a benchmark. points: [{ day: 'YYYY-MM-DD', value, bench }]
+export function mountLineChart(container, points, { labels = ['Your account', 'S&P 500'] } = {}) {
+  const draw = () => renderLine(container, points, labels);
+  const ro = new ResizeObserver(draw);
+  ro.observe(container);
+  draw();
+  return { destroy() { ro.disconnect(); } };
+}
+
+function renderLine(container, points, labels) {
+  const width = Math.max(300, container.clientWidth);
+  const height = 220, padL = 8, padR = 70, padT = 12, padB = 24;
+  const vals = points.flatMap((p) => [p.value, p.bench]).filter((v) => v != null);
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  if (hi - lo < hi * 0.02) { lo *= 0.99; hi *= 1.01; }
+  const pad = (hi - lo) * 0.08; lo -= pad; hi += pad;
+  const n = points.length;
+  const x = (i) => padL + (n === 1 ? (width - padL - padR) / 2 : (i / (n - 1)) * (width - padL - padR));
+  const y = (v) => padT + (1 - (v - lo) / (hi - lo)) * (height - padT - padB);
+  const path = (key) => points.map((p, i) => (p[key] == null ? '' : `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p[key]).toFixed(1)}`)).join('');
+  const fmt = (v) => `$${Math.round(v).toLocaleString('en-US')}`;
+  let html = '';
+  for (let k = 0; k <= 4; k++) {
+    const v = lo + ((hi - lo) * k) / 4;
+    html += `<line class="grid" x1="${padL}" x2="${width - padR}" y1="${y(v)}" y2="${y(v)}"/><text class="axis" x="${width - padR + 6}" y="${y(v) + 4}">${fmt(v)}</text>`;
+  }
+  const step = Math.max(1, Math.ceil(n / 6));
+  points.forEach((p, i) => {
+    if (i % step === 0) html += `<text class="axis" x="${x(i)}" y="${height - 6}" text-anchor="middle">${new Date(`${p.day}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</text>`;
+  });
+  html += `<path class="eq-line bench" d="${path('bench')}"/><path class="eq-line acct" d="${path('value')}"/>`;
+  const lastP = points[n - 1];
+  html += `<circle class="eq-dot acct" cx="${x(n - 1)}" cy="${y(lastP.value)}" r="4"/>`;
+  if (lastP.bench != null) html += `<circle class="eq-dot bench" cx="${x(n - 1)}" cy="${y(lastP.bench)}" r="4"/>`;
+  html += `<line class="cross" x1="0" x2="0" y1="${padT}" y2="${height - padB}" visibility="hidden"/>`;
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+  svg.setAttribute('width', width);
+  svg.setAttribute('height', height);
+  svg.setAttribute('class', 'chart');
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', `${labels[0]} compared with ${labels[1]}`);
+  svg.innerHTML = html;
+  const tip = document.createElement('div');
+  tip.className = 'chart-tip';
+  tip.hidden = true;
+  const cross = svg.querySelector('.cross');
+  svg.addEventListener('pointermove', (e) => {
+    const r = svg.getBoundingClientRect();
+    const px = ((e.clientX - r.left) / r.width) * width;
+    const i = n === 1 ? 0 : Math.max(0, Math.min(n - 1, Math.round(((px - padL) / (width - padL - padR)) * (n - 1))));
+    const p = points[i];
+    cross.setAttribute('x1', x(i)); cross.setAttribute('x2', x(i)); cross.setAttribute('visibility', 'visible');
+    tip.innerHTML = `<strong>${new Date(`${p.day}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</strong><br><span class="k-acct">■</span> ${labels[0]}: ${fmt(p.value)}${p.bench != null ? `<br><span class="k-bench">■</span> ${labels[1]}: ${fmt(p.bench)}` : ''}`;
+    tip.hidden = false;
+    const left = (x(i) / width) * r.width;
+    tip.style.left = `${left > r.width / 2 ? left - 190 : left + 12}px`;
+  });
+  svg.addEventListener('pointerleave', () => { tip.hidden = true; cross.setAttribute('visibility', 'hidden'); });
+  container.replaceChildren(svg, tip);
+}

@@ -7,6 +7,7 @@ import { renderPlanner } from './views/planner.js';
 import { renderSizer } from './views/sizer.js';
 import { renderPortfolio } from './views/portfolio.js';
 import { renderTrade } from './views/trade.js';
+import { renderPractice } from './views/practice.js';
 import { renderAcademy, renderLesson } from './views/academy.js';
 
 const app = document.getElementById('app');
@@ -20,6 +21,7 @@ const routes = [
   [/^\/planner$/, 'planner', () => renderPlanner(app)],
   [/^\/sizer$/, 'sizer', (m, q) => renderSizer(app, q)],
   [/^\/trade\/([\w.-]+)$/, 'sizer', (m) => renderTrade(app, decodeURIComponent(m[1]))],
+  [/^\/practice$/, 'practice', (m, q) => renderPractice(app, q)],
   [/^\/academy$/, 'academy', () => renderAcademy(app)],
   [/^\/academy\/([\w-]+)$/, 'academy', (m) => renderLesson(app, m[1])],
 ];

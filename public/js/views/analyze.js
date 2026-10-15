@@ -39,6 +39,7 @@ export async function renderAnalyze(app, symbol) {
       </div>
       <div class="head-actions">
         <button class="btn ${inList ? 'ghost' : ''}" id="watch-btn">${inList ? '✓ On watchlist' : '+ Add to watchlist'}</button>
+        <a class="btn" href="#/practice?symbol=${encodeURIComponent(symbol)}">Practice trade</a>
         <a class="btn ghost" href="#/sizer?entry=${a.plan.entry.toFixed(2)}&stop=${a.plan.stop.toFixed(2)}&t1=${a.plan.targets[0].toFixed(2)}&t2=${a.plan.targets[1].toFixed(2)}&t3=${a.plan.targets[2].toFixed(2)}&symbol=${encodeURIComponent(symbol)}">Open in sizer</a>
       </div>
     </section>
