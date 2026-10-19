@@ -95,3 +95,12 @@ test('buildDeskData forecasts from the last completed day', () => {
   assert.ok(recs[0].pBig > 0 && recs[0].pBig < 1);
   assert.equal(recs[0].intraday, null);
 });
+
+test('an unproven up-day model gets no vote', () => {
+  const rec = (sym, pUp) => ({ symbol: sym, prevClose: 20, yHigh: 20.5, yLow: 19.5, atr: 0.6, atrPct: 0.03, dollarVol: 2e8, pBig: 0.5, pUp, yRvol: 1, yClosePos: 0.5, intraday: null });
+  const on = rankDesk([rec('A', 0.6), rec('B', 0.4)], { budget: 5000 });
+  const off = rankDesk([rec('A', 0.6), rec('B', 0.4)], { budget: 5000, useUpModel: false });
+  assert.ok(on.picks.find((p) => p.symbol === 'A').score > on.picks.find((p) => p.symbol === 'B').score);
+  assert.equal(off.picks[0].score, off.picks[1].score);
+  assert.ok(off.picks.every((p) => p.bias === 'watch'), 'without intraday confirmation nothing is called LONG');
+});

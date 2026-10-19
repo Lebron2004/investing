@@ -52,7 +52,8 @@ export async function renderDesk(app, q) {
     const clock = nyClock();
     const recs = data.stocks.map((r) => applyQuote(r, quotes[r.symbol], clock));
     const market = { spy: data.market?.spy && applyQuote(data.market.spy, quotes.SPY, clock), qqq: data.market?.qqq && applyQuote(data.market.qqq, quotes.QQQ, clock) };
-    const ranked = rankDesk(recs, { budget, riskPct, fractional, top: compact ? 6 : 8, marketOpen: clock.open });
+    const useUpModel = (data.model?.up?.metrics?.auc ?? 0) >= 0.53;
+    const ranked = rankDesk(recs, { budget, riskPct, fractional, top: compact ? 6 : 8, marketOpen: clock.open, useUpModel });
     lastRanked = ranked;
     const tips = deskTips({ clock, market, budget, riskPct, ranked });
     const live = settings().finnhubKey && liveStatus.ok && lastLive;
@@ -71,7 +72,7 @@ export async function renderDesk(app, q) {
 
       <section class="picks">
         <h2>${clock.open ? 'Top picks right now' : 'Watchlist for the next session'} <span class="muted small">for a ${money(budget, 0)} budget · ${ranked.eligible} of ${ranked.total} stocks fit</span></h2>
-        ${ranked.picks.length ? ranked.picks.map((p, i) => pickCard(p, i, compact, clock)).join('')
+        ${ranked.picks.length ? ranked.picks.map((p, i) => pickCard({ ...p, useUpModel }, i, compact, clock)).join('')
           : '<p class="muted">Nothing fits this budget and risk right now. Try a bigger budget, fractional shares, or 1% risk.</p>'}
       </section>
 
@@ -155,7 +156,7 @@ function pickCard(p, i, compact, clock) {
   const biasLabel = { long: 'LONG', watch: 'WATCH' }[p.bias];
   const facts = [
     p.pBig != null ? `<span title="AI probability of a big-range day (good for day trading)">AI move odds <strong>${pct(p.pBig, 0)}</strong></span>` : '',
-    p.pUp != null ? `<span title="AI probability the stock closes above its open">up-day <strong>${pct(p.pUp, 0)}</strong></span>` : '',
+    p.pUp != null && p.useUpModel ? `<span title="AI probability the stock closes above its open">up-day <strong>${pct(p.pUp, 0)}</strong></span>` : '',
     p.intraday?.rvol ? `<span title="Volume today vs. normal for this time of day">RVOL <strong>${p.intraday.rvol.toFixed(1)}×</strong></span>` : '',
     p.aboveVwap != null ? `<span class="${p.aboveVwap ? 'up' : 'down'}">${p.aboveVwap ? 'above' : 'below'} VWAP</span>` : '',
   ].filter(Boolean).join('<span class="sep">·</span>');
@@ -188,7 +189,7 @@ function modelCard(m) {
     <div class="big-stats four">
       <div><span class="label">Big-mover hit rate</span><span class="value">${pct(b.top10Rate, 0)}</span><span class="sub">of its top-10% picks vs ${pct(b.baseRate, 0)} average</span></div>
       <div><span class="label">Big-mover AUC</span><span class="value">${b.auc.toFixed(2)}</span><span class="sub">0.50 = coin flip, 1.00 = perfect</span></div>
-      <div><span class="label">Up-day AUC</span><span class="value">${u.auc.toFixed(2)}</span><span class="sub">${u.auc < 0.53 ? 'barely better than a coin flip' : 'a small edge'}</span></div>
+      <div><span class="label">Up-day AUC</span><span class="value">${u.auc.toFixed(2)}</span><span class="sub">${u.auc < 0.53 ? 'no better than a coin flip lately, so it\'s switched off in the score' : 'a small edge, so it gets a small vote'}</span></div>
       <div><span class="label">Tested on</span><span class="value">${m.testSamples.toLocaleString('en-US')}</span><span class="sub">unseen days since ${esc(m.testFrom)}</span></div>
     </div>
     <p class="small muted">Honest read: predicting <em>which</em> stocks will move a lot is doable. Predicting <em>direction</em> is close to a coin flip, which is why every pick needs a confirmation entry (a breakout or VWAP hold) and a stop. The desk score also blends in live momentum, relative volume and price vs. VWAP.</p>

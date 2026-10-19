@@ -127,7 +127,7 @@ export function applyQuote(rec, q, clock = nyClock()) {
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 const r2 = (n) => Math.round(n * 100) / 100;
 
-export function rankDesk(records, { budget = 1000, riskPct = 0.01, fractional = false, minDollarVol = 50e6, top = 8, marketOpen = false } = {}) {
+export function rankDesk(records, { budget = 1000, riskPct = 0.01, fractional = false, minDollarVol = 50e6, top = 8, marketOpen = false, useUpModel = true } = {}) {
   const round = fractional ? (x) => Math.floor(x * 1000) / 1000 : Math.floor;
   const eligible = [];
   const skipped = { price: 0, liquidity: 0, volatility: 0 };
@@ -155,10 +155,13 @@ export function rankDesk(records, { budget = 1000, riskPct = 0.01, fractional = 
       activity: clamp01(((id?.rvol ?? r.yRvol ?? 1) - 0.8) / 1.7),
       strength: dayPos,
     };
-    const score = Math.round(100 * (0.35 * parts.ai + 0.2 * parts.upOdds + 0.2 * parts.momentum + 0.15 * parts.activity + 0.1 * parts.strength));
+    // The up-day model only gets a vote when it has proven itself on recent unseen days.
+    const score = Math.round(100 * (useUpModel
+      ? 0.35 * parts.ai + 0.2 * parts.upOdds + 0.2 * parts.momentum + 0.15 * parts.activity + 0.1 * parts.strength
+      : 0.4 * parts.ai + 0.3 * parts.momentum + 0.18 * parts.activity + 0.12 * parts.strength));
     let bias;
     if (id) bias = chg > 0 && aboveVwap !== false ? 'long' : chg < 0 && aboveVwap === false ? 'avoid' : 'watch';
-    else bias = (r.pUp ?? 0.5) >= 0.5 ? 'long' : 'watch';
+    else bias = useUpModel && (r.pUp ?? 0.5) >= 0.5 ? 'long' : 'watch';
     return { ...r, chg, moveAtr, aboveVwap, dayPos, parts, score, bias, plan: planFor(r, id, { budget, riskPct, round, marketOpen }) };
   }).filter((x) => x.plan);
 
