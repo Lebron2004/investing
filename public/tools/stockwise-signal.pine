@@ -8,6 +8,7 @@
 //   WAIT label  → flipped up, but the long-term trend is still down: be careful.
 //   SELL label  → the line just flipped down. Exit or tighten up.
 //   Orange dot  → overheated (RSI above 75): don't chase; consider taking some profit.
+//   Shaded zone → green between line and price = hold zone; red = stay-out zone.
 //
 // TURN IT ON / OFF: hover the indicator name at the top-left of the chart and click the eye icon.
 // SETTINGS: click the gear icon next to the name.
@@ -24,7 +25,9 @@ useTrend  = input.bool(true, "Only BUY above the long-term average", group="Filt
 trendLen  = input.int(200, "Long-term average length", minval=10, group="Filters")
 showLbl   = input.bool(true, "Show BUY / SELL / WAIT labels", group="Display")
 showHot   = input.bool(true, "Show overheated dots (RSI > 75)", group="Display")
+showFill  = input.bool(true, "Shade the hold / stay-out zone", group="Display")
 showBg    = input.bool(false, "Tint the background green / red", group="Display")
+paintBars = input.bool(false, "Color the candles by trend", group="Display")
 showMAs   = input.bool(false, "Show 20 / 50 / 200 averages", group="Display")
 showPanel = input.bool(true, "Show status panel", group="Display")
 
@@ -42,13 +45,24 @@ sellSig  = flipDown
 hotSig   = up and r > 75 and r[1] <= 75
 
 // ---- Drawing ----
-plot(up ? stLine : na, "Trailing stop (uptrend)", color=color.new(#0f8a4f, 0), linewidth=2, style=plot.style_linebr)
-plot(up ? na : stLine, "Resistance (downtrend)", color=color.new(#c8312b, 0), linewidth=2, style=plot.style_linebr)
-plotshape(showLbl and buySig, "BUY", shape.labelup, location.belowbar, color.new(#0f8a4f, 0), text="BUY", textcolor=color.white, size=size.small)
-plotshape(showLbl and sellSig, "SELL", shape.labeldown, location.abovebar, color.new(#c8312b, 0), text="SELL", textcolor=color.white, size=size.small)
-plotshape(showLbl and waitSig, "WAIT", shape.labelup, location.belowbar, color.new(#808080, 0), text="WAIT", textcolor=color.white, size=size.tiny)
+// Separate green and red lines (with breaks), so there's no vertical jump on the flip bar.
+atrNow   = ta.atr(atrLen)
+upPlot   = plot(up ? stLine : na, "Hold line (uptrend)", color=color.new(#0f8a4f, 0), linewidth=3, style=plot.style_linebr)
+downPlot = plot(up ? na : stLine, "Stay-out line (downtrend)", color=color.new(#c8312b, 0), linewidth=3, style=plot.style_linebr)
+midPlot  = plot(hl2, "Price (mid)", display=display.none)
+fill(midPlot, upPlot, color=showFill ? color.new(#0f8a4f, 88) : na, title="Hold zone")
+fill(midPlot, downPlot, color=showFill ? color.new(#c8312b, 88) : na, title="Stay-out zone")
+
+// Big labels with the price, placed clear of the candles.
+if showLbl and buySig
+    label.new(bar_index, low - atrNow * 0.8, "BUY\n" + str.tostring(close, format.mintick), style=label.style_label_up, color=color.new(#0f8a4f, 0), textcolor=color.white, size=size.normal)
+if showLbl and sellSig
+    label.new(bar_index, high + atrNow * 0.8, "SELL\n" + str.tostring(close, format.mintick), style=label.style_label_down, color=color.new(#c8312b, 0), textcolor=color.white, size=size.normal)
+if showLbl and waitSig
+    label.new(bar_index, low - atrNow * 0.8, "WAIT", style=label.style_label_up, color=color.new(#808080, 0), textcolor=color.white, size=size.small)
 plotshape(showHot and hotSig, "Overheated", shape.circle, location.abovebar, color.new(#e08a00, 0), size=size.tiny)
 bgcolor(showBg ? (up ? color.new(#0f8a4f, 92) : color.new(#c8312b, 92)) : na, title="Trend tint")
+barcolor(paintBars ? (up ? color.new(#0f8a4f, 0) : color.new(#c8312b, 0)) : na, title="Trend candles")
 plot(showMAs ? ta.sma(close, 20) : na, "20-day average", color=color.new(#2f6fdf, 0))
 plot(showMAs ? ta.sma(close, 50) : na, "50-day average", color=color.new(#d9822b, 0))
 plot(showMAs ? trendMA : na, "Long-term average", color=color.new(#8b47c9, 0))

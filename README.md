@@ -15,6 +15,13 @@ A stock-tracking and trading-education site:
   - A coach grades every buy on size, stop-loss, signals and earnings.
   - Positions, history, a report card, and your account charted against the S&P 500.
 - **Sizer & Trade Tracker**: the 1%-risk calculator with a scale-out selling plan. Click *Track this trade* and it replays every daily candle since your buy date. It marks when targets or the stop were hit, trails the stop as you profit, and tells you each day to **Hold**, **Watch**, or **Sell N shares**, with a chart and a day-by-day log.
+- **Day Trade Desk**: the day's day-trade candidates for your budget.
+  - Picks are ranked by StockWise's own machine-learning model: logistic regression trained on ~55k past trading days, then tested on recent days it never saw.
+  - Also uses live momentum, relative volume and VWAP.
+  - Each pick has an entry, stop, targets and a share count sized to your risk.
+  - Time-of-day tips and daily loss and PDT rules.
+  - Opens as a narrow **side panel** next to your charts and refreshes on its own: every 30 s with a free Finnhub key, otherwise when the site updates.
+- **Install as an app**: StockWise is installable (Chrome/Edge install icon, Safari "Add to Dock") and opens in its own window.
 - **Signal Line** (Tools page): a buy / hold / sell line for your own candle charts, which you can switch on or off anytime.
   - Downloads for **TradingView** (`public/tools/stockwise-signal.pine`) and **thinkorswim** (`public/tools/stockwise-signal.ts`), with install steps.
   - Built into StockWise's stock charts with an on/off switch.
@@ -69,6 +76,8 @@ If Yahoo Finance can't be reached, the server falls back to simulated data and t
 | `public/js/lib/scan.js` | Compact per-stock summaries for Top Ideas / Planner (`/api/scan` or `data/scan.json`) |
 | `public/js/lib/paper.js` | Practice-trading engine: fills, limit/stop orders, average cost, equity curve, coach |
 | `public/js/lib/signal.js` | Signal Line (same rules as the TradingView / thinkorswim files in `public/tools/`) |
+| `public/js/lib/daymodel.js` | Day-trade AI: features, logistic regression training, holdout metrics |
+| `public/js/lib/daytrade.js` | Desk: market clock, intraday snapshot (VWAP, opening range, RVOL), ranking, plans, tips |
 | `public/js/lib/classroom.js` | Trading Class: picks historical setups and grades each decision |
 | `public/js/lib/tracker.js` | Candle-by-candle trade replay (targets, closing stop, trailing stop) |
 | `public/js/lib/indicators.js` | SMA, EMA, RSI, MACD, ATR, Bollinger, pivots |

@@ -110,7 +110,12 @@ function render(container, candles, ind, levels, bars, paths = [], markers = [])
     const up = m.up ?? m.tone === 'buy';
     const tri = up ? `${mx},${my + 3} ${mx - 6},${my + 13} ${mx + 6},${my + 13}` : `${mx},${my - 3} ${mx - 6},${my - 13} ${mx + 6},${my - 13}`;
     html += `<polygon class="marker ${m.tone}" points="${tri}"><title>${m.title || m.label}</title></polygon>`;
-    if (m.label) html += `<text class="marker-label ${m.tone}" x="${mx}" y="${up ? my + 25 : my - 17}" text-anchor="middle">${m.label}</text>`;
+    if (m.label) {
+      // Solid pill so BUY / SELL stand out from the candles.
+      const w = m.label.length * 6.4 + 10, ty = up ? my + 16 : my - 30;
+      html += `<rect class="marker-pill ${m.tone}" x="${mx - w / 2}" y="${ty}" width="${w}" height="15" rx="4"/>`;
+      html += `<text class="marker-pill-text" x="${mx}" y="${ty + 11}" text-anchor="middle">${m.label}</text>`;
+    }
   }
   // trade levels
   for (const l of levels) {

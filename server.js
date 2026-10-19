@@ -10,7 +10,9 @@ import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { UNIVERSE } from './public/js/lib/universe.js';
-import { fetchHistory, fundamentalsFor, searchYahoo, SYMBOL_RE } from './lib/market-data.js';
+import { fetchHistory, fetchYahooIntraday, fundamentalsFor, searchYahoo, SYMBOL_RE } from './lib/market-data.js';
+import { trainDayModels } from './public/js/lib/daymodel.js';
+import { nyClock, intradaySnapshot, buildDeskData } from './public/js/lib/daytrade.js';
 import { summarize } from './public/js/lib/scan.js';
 
 const PORT = Number(process.env.PORT) || 3000;
@@ -26,6 +28,8 @@ const MIME = {
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
   '.pine': 'text/plain; charset=utf-8',
+  '.png': 'image/png',
+  '.webmanifest': 'application/manifest+json',
   '.ts': 'text/plain; charset=utf-8',
 };
 
@@ -70,6 +74,50 @@ async function scanAll() {
   return { updated: new Date().toISOString(), results };
 }
 
+// Day Trade Desk: the AI is retrained twice a day; intraday 5-minute data refreshes every minute.
+async function dayTradeDesk() {
+  const stocks = UNIVERSE.filter((u) => u.sector !== 'ETF');
+  const loaded = new Map();
+  const queue = [...stocks.map((u) => u.symbol), 'SPY', 'QQQ'];
+  await Promise.all(Array.from({ length: 6 }, async () => {
+    while (queue.length) {
+      const s = queue.shift();
+      try { loaded.set(s, await history(s)); } catch { /* skip */ }
+    }
+  }));
+  const bench = loaded.get('SPY')?.candles;
+  const model = await cached('daymodel', async () => trainDayModels(stocks.filter((u) => loaded.has(u.symbol)).map((u) => ({ symbol: u.symbol, candles: loaded.get(u.symbol).candles })), bench), 12 * 3600e3);
+  const clock = nyClock();
+  const intraday = new Map();
+  if (clock.open && !DEMO_ONLY) {
+    const q = [...loaded.keys()];
+    await Promise.all(Array.from({ length: 8 }, async () => {
+      while (q.length) {
+        const sym = q.shift();
+        const c = loaded.get(sym).candles;
+        const avgVol = c.slice(-21, -1).reduce((a, x) => a + (x.volume || 0), 0) / 20;
+        const snap = await cached(`i:${sym}`, async () => intradaySnapshot(await fetchYahooIntraday(sym), avgVol), 60e3);
+        if (snap) intraday.set(sym, snap);
+      }
+    }));
+  }
+  const marketRec = (sym) => {
+    const c = loaded.get(sym)?.candles;
+    if (!c) return null;
+    const prev = clock.open && new Date(c.at(-1).t).toISOString().slice(0, 10) === clock.day ? c.at(-2) : c.at(-1);
+    return { symbol: sym, prevClose: prev.close, intraday: intraday.get(sym) || null };
+  };
+  const strip = (m) => { if (!m) return m; const { w, b, ...rest } = m; return rest; };
+  return {
+    updated: new Date().toISOString(),
+    clock,
+    model: model ? { trainedAt: model.trainedAt, samples: model.samples, testSamples: model.testSamples, testFrom: model.testFrom, features: model.features, big: strip(model.big), up: strip(model.up) } : null,
+    market: { spy: marketRec('SPY'), qqq: marketRec('QQQ') },
+    stocks: buildDeskData(stocks.filter((u) => loaded.has(u.symbol)).map((u) => ({ ...u, candles: loaded.get(u.symbol).candles, intraday: intraday.get(u.symbol) || null })), bench, model, clock),
+    source: DEMO_ONLY ? 'demo' : 'live',
+  };
+}
+
 function send(res, status, body, type = MIME['.json']) {
   res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store' });
   res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body));
@@ -105,6 +153,7 @@ async function handleApi(url, res) {
   // Pages poll this to learn when fresher prices are available (they change every CACHE_MS).
   if (p === '/api/status') return send(res, 200, { updated: new Date(Math.floor(Date.now() / CACHE_MS) * CACHE_MS).toISOString() });
   if (p === '/api/universe') return send(res, 200, { results: UNIVERSE });
+  if (p === '/api/daytrade') return send(res, 200, await cached('desk', dayTradeDesk, 60e3));
   if (p === '/api/scan') return send(res, 200, await cached('scan', scanAll));
   return send(res, 404, { error: 'Not found' });
 }

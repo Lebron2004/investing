@@ -10,7 +10,9 @@
 import { cp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { UNIVERSE } from '../public/js/lib/universe.js';
-import { fetchHistory, fundamentalsFor, dataFileName, SYMBOL_RE } from '../lib/market-data.js';
+import { fetchHistory, fetchYahooIntraday, fundamentalsFor, dataFileName, SYMBOL_RE } from '../lib/market-data.js';
+import { trainDayModels } from '../public/js/lib/daymodel.js';
+import { nyClock, intradaySnapshot, buildDeskData } from '../public/js/lib/daytrade.js';
 import { summarize } from '../public/js/lib/scan.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -101,6 +103,46 @@ const benchmark = loaded.get('SPY')?.candles;
 for (const [symbol, data] of loaded) {
   if (!inUniverse.has(symbol)) continue;
   try { scan.push(summarize(data, { benchmark })); } catch (err) { console.warn(`::warning::${symbol}: ${err.message}`); }
+}
+
+// Day Trade Desk: train the AI on every stock's history, then score the next session.
+{
+  const started = Date.now();
+  const stocks = UNIVERSE.filter((u) => u.sector !== 'ETF' && loaded.has(u.symbol));
+  const model = benchmark ? trainDayModels(stocks.map((u) => ({ symbol: u.symbol, candles: loaded.get(u.symbol).candles })), benchmark) : null;
+  const clock = nyClock();
+  const intraday = new Map();
+  if (clock.open && !demoOnly) {
+    const q = [...stocks.map((u) => u.symbol), 'SPY', 'QQQ'];
+    await Promise.all(Array.from({ length: 6 }, async () => {
+      while (q.length) {
+        const sym = q.shift();
+        const bars = await fetchYahooIntraday(sym);
+        const c = loaded.get(sym)?.candles;
+        const avgVol = c ? c.slice(-21, -1).reduce((a, x) => a + (x.volume || 0), 0) / 20 : null;
+        if (bars.length) intraday.set(sym, intradaySnapshot(bars, avgVol));
+      }
+    }));
+  }
+  const desk = buildDeskData(stocks.map((u) => ({ ...u, candles: loaded.get(u.symbol).candles, intraday: intraday.get(u.symbol) || null })), benchmark, model, clock);
+  const marketRec = (sym) => {
+    const c = loaded.get(sym)?.candles;
+    if (!c) return null;
+    const lastDay = new Date(c.at(-1).t).toISOString().slice(0, 10);
+    const prev = clock.open && lastDay === clock.day ? c.at(-2) : c.at(-1);
+    return { symbol: sym, prevClose: prev.close, intraday: clock.open ? intraday.get(sym) || null : null };
+  };
+  const { w: _w, b: _b, ...bigInfo } = model?.big || {};
+  const { w: _w2, b: _b2, ...upInfo } = model?.up || {};
+  await writeFile(`${out}data/daytrade.json`, JSON.stringify({
+    updated: manifest.updated,
+    clock,
+    model: model ? { trainedAt: model.trainedAt, samples: model.samples, testSamples: model.testSamples, testFrom: model.testFrom, features: model.features, big: bigInfo, up: upInfo } : null,
+    market: { spy: marketRec('SPY'), qqq: marketRec('QQQ') },
+    stocks: desk,
+    source: demoOnly ? 'demo' : 'live',
+  }));
+  console.log(`Day Trade Desk: ${desk.length} stocks scored, ${intraday.size} with intraday data, model ${model ? `AUC ${model.big.metrics.auc.toFixed(3)} (big) / ${model.up.metrics.auc.toFixed(3)} (up)` : 'not trained'} in ${((Date.now() - started) / 1000).toFixed(1)}s`);
 }
 
 manifest.symbols.sort((a, b) => a.symbol.localeCompare(b.symbol));

@@ -2,6 +2,8 @@ import { getHistory, money, esc, demoNotice } from '../api.js';
 import { computeIndicators } from '../lib/analysis.js';
 import { signalLine, SIGNAL_DEFAULTS } from '../lib/signal.js';
 import { mountChart } from '../chart.js';
+import { openSidePanel } from './desk.js';
+import { promptInstall } from '../install.js';
 
 const FILES = {
   pine: { path: 'tools/stockwise-signal.pine', name: 'stockwise-signal.pine' },
@@ -16,6 +18,19 @@ export async function renderTools(app, q) {
       <p class="lede">A line for your candle charts that tells you at a glance whether to <strong class="up">buy</strong>, <strong>hold</strong> or <strong class="down">sell</strong>. Download it for TradingView or thinkorswim, or switch it on in StockWise's own charts. Turn it on or off whenever you want.</p>
     </section>
 
+    <section class="card desk-promo">
+      <div>
+        <span class="eyebrow">New · updates all day</span>
+        <h2>⚡ Day Trade Desk</h2>
+        <p>Which stocks to day-trade today for your budget, picked by StockWise's own AI model, with entry, stop, targets and share counts, plus tips for the time of day. Keep it open in a narrow window next to your charts, or install StockWise as an app on your computer.</p>
+        <div class="dl-row">
+          <a class="btn" href="#/desk">Open the Desk</a>
+          <button class="btn ghost" data-sidepanel>Open as side panel ↗</button>
+          <button class="btn ghost" data-install>⬇ Install as app</button>
+        </div>
+      </div>
+    </section>
+
     <div class="grid-2 tools-top">
       <section class="card">
         <h2>How to read it</h2>
@@ -25,6 +40,7 @@ export async function renderTools(app, q) {
           <li><span class="tag-sample buy">BUY</span><div>The line just flipped up and price is above its 200-day average. A fresh uptrend.</div></li>
           <li><span class="tag-sample wait">WAIT</span><div>Flipped up, but the long-term trend is still down. Often a short bounce, so be careful.</div></li>
           <li><span class="tag-sample sell">SELL</span><div>The line just flipped down. Exit, or at least tighten up.</div></li>
+          <li><span class="swatch zone"></span><div><strong>Shaded zone</strong> (TradingView / thinkorswim): light green between the line and price = hold zone, light red = stay-out zone. Turn it off with the <em>Shade</em> / <em>showCloud</em> setting. There's also a setting to <em>color the candles</em> by trend.</div></li>
           <li><span class="dot-sample"></span><div><strong>Orange dot:</strong> overheated (RSI over 75). Don't chase it. Consider taking some profit.</div></li>
         </ul>
       </section>
@@ -133,6 +149,8 @@ export async function renderTools(app, q) {
     const v = e.target.elements.sym.value.trim().toUpperCase();
     if (v) preview(v);
   });
+  app.querySelector('[data-sidepanel]').addEventListener('click', openSidePanel);
+  app.querySelector('[data-install]').addEventListener('click', promptInstall);
   app.querySelectorAll('[data-copy]').forEach((b) => b.addEventListener('click', async () => {
     const f = FILES[b.dataset.copy];
     try {

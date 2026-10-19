@@ -10,6 +10,8 @@ import { renderTrade } from './views/trade.js';
 import { renderPractice } from './views/practice.js';
 import { renderClass } from './views/classroom.js';
 import { renderTools } from './views/tools.js';
+import { renderDesk } from './views/desk.js';
+import { registerServiceWorker } from './install.js';
 import { renderAcademy, renderLesson } from './views/academy.js';
 
 const app = document.getElementById('app');
@@ -17,6 +19,7 @@ let cleanup = null;
 let dirty = false;      // the user has typed into the current page
 let lastRender = Date.now();
 let pendingVersion = null;
+let navId = 0;          // only the most recent navigation may write to the page
 const pill = document.getElementById('live-pill');
 
 const routes = [
@@ -28,6 +31,7 @@ const routes = [
   [/^\/sizer$/, 'sizer', (m, q) => renderSizer(app, q)],
   [/^\/trade\/([\w.-]+)$/, 'sizer', (m) => renderTrade(app, decodeURIComponent(m[1]))],
   [/^\/practice$/, 'practice', (m, q) => renderPractice(app, q)],
+  [/^\/desk$/, 'desk', (m, q) => renderDesk(app, q)],
   [/^\/tools$/, 'tools', (m, q) => renderTools(app, q)],
   [/^\/class$/, 'academy', (m, q) => renderClass(app, q)],
   [/^\/academy$/, 'academy', () => renderAcademy(app)],
@@ -40,6 +44,7 @@ async function route(refresh = false) {
   if (typeof cleanup === 'function') cleanup();
   cleanup = null;
   const scrollY = window.scrollY;
+  const myNav = ++navId;
   if (!refresh) dirty = false;
   lastRender = Date.now();
   hidePill();
@@ -49,10 +54,14 @@ async function route(refresh = false) {
     document.querySelectorAll('#nav a').forEach((a) => a.classList.toggle('active', a.dataset.route === nav));
     if (!refresh) app.innerHTML = '<div class="loading">Loading…</div>';
     try {
-      cleanup = await fn(m, new URLSearchParams(query));
+      const done = await fn(m, new URLSearchParams(query));
+      if (myNav === navId) cleanup = done;
+      else if (typeof done === 'function') done(); // the user already moved on: tidy up the old page
     } catch (err) {
-      app.innerHTML = `<div class="card"><h2>Something went wrong</h2><p>${esc(err.message)}</p><p><a href="#/">Back to watchlist</a></p></div>`;
+      // A page that finished loading after you navigated away must not overwrite the new page.
+      if (myNav === navId) app.innerHTML = `<div class="card"><h2>Something went wrong</h2><p>${esc(err.message)}</p><p><a href="#/">Back to watchlist</a></p></div>`;
     }
+    if (myNav !== navId) return;
     window.scrollTo(0, refresh ? scrollY : 0);
     showStatus();
     return;
@@ -145,3 +154,4 @@ async function tick() {
 setInterval(tick, 60000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
 staticSite.then(showStatus);
+registerServiceWorker();

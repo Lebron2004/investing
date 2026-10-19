@@ -96,6 +96,22 @@ async function liveQuote(symbol) {
 
 const dayOf = (t) => new Date(t).toISOString().slice(0, 10);
 
+// Live quotes for several symbols ({ SYM: quote }), or {} without a Finnhub key.
+export async function liveQuotes(symbols) {
+  if (!settings().finnhubKey) return {};
+  const out = {};
+  await Promise.all(symbols.map(async (s) => { const q = await liveQuote(s); if (q) out[s] = q; }));
+  return out;
+}
+
+// Day Trade Desk data: AI forecasts + intraday snapshot (always fetched fresh).
+export async function getDeskData() {
+  const m = await staticSite;
+  const r = await fetch(m ? `data/daytrade.json?t=${Date.now()}` : 'api/daytrade', { cache: 'no-store' });
+  if (!r.ok) throw new Error('Day-trade data isn\'t available yet. It appears after the next site update.');
+  return r.json();
+}
+
 // Returns a copy of the history with today's candle updated (or added) from the live quote.
 async function withLive(data) {
   if (!settings().finnhubKey || !data?.candles?.length) return data;

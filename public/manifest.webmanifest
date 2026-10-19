@@ -1,0 +1,20 @@
+{
+  "name": "StockWise",
+  "short_name": "StockWise",
+  "description": "Stock signals, a live Day Trade Desk, practice trading and a trading academy.",
+  "start_url": "./#/desk",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0d1117",
+  "theme_color": "#0f766e",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Day Trade Desk (side panel)", "url": "./#/desk?compact=1" },
+    { "name": "Top Ideas", "url": "./#/ideas" },
+    { "name": "Practice", "url": "./#/practice" }
+  ]
+}
