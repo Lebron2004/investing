@@ -8,6 +8,8 @@ import { promptInstall } from '../install.js';
 const FILES = {
   pine: { path: 'tools/stockwise-signal.pine', name: 'stockwise-signal.pine' },
   tos: { path: 'tools/stockwise-signal.ts', name: 'StockWise_Signal_Line.ts' },
+  zones: { path: 'tools/stockwise-zones.ts', name: 'StockWise_Zones.ts' },
+  classic: { path: 'tools/stockwise-signal-classic.ts', name: 'StockWise_Signal_Classic.ts' },
 };
 
 export async function renderTools(app, q) {
@@ -40,7 +42,7 @@ export async function renderTools(app, q) {
           <li><span class="tag-sample buy">BUY</span><div>The line just flipped up and price is above its 200-day average. A fresh uptrend.</div></li>
           <li><span class="tag-sample wait">WAIT</span><div>Flipped up, but the long-term trend is still down. Often a short bounce, so be careful.</div></li>
           <li><span class="tag-sample sell">SELL</span><div>The line just flipped down. Exit, or at least tighten up.</div></li>
-          <li><span class="swatch zone"></span><div><strong>Shaded zone</strong> (TradingView / thinkorswim): light green between the line and price = hold zone, light red = stay-out zone. Turn it off with the <em>Shade</em> / <em>showCloud</em> setting. There's also a setting to <em>color the candles</em> by trend.</div></li>
+          <li><span class="swatch zone"></span><div><strong>Shaded zone</strong> (TradingView / thinkorswim): light green between the line and price = hold zone, light red = stay-out zone. On TradingView it's a setting (<em>Shade the hold / stay-out zone</em>); on thinkorswim it's the optional <em>StockWise_Zones</em> add-on (see below). Both can also <em>color the candles</em> by trend.</div></li>
           <li><span class="dot-sample"></span><div><strong>Orange dot:</strong> overheated (RSI over 75). Don't chase it. Consider taking some profit.</div></li>
         </ul>
       </section>
@@ -79,6 +81,13 @@ export async function renderTools(app, q) {
           <li>Back in the list, double-click it to add it, then <strong>Apply</strong>.</li>
         </ol>
         <p class="small">Or use <strong>Import</strong> in the Edit Studies window and pick the downloaded .ts file. <strong>On / off:</strong> Studies → Edit studies → remove it from "Added studies", or add it back anytime from the list. Labels at the top-left show HOLD / SELL and the stop price.</p>
+        <p class="small"><strong>Updating from an older version?</strong> In Edit studies, find <code>StockWise_Signal_Line</code> in the list, click the scroll icon to edit it, select all, delete, paste the new code, then OK. Don't create a second copy with the same name.</p>
+        <details class="explain small"><summary>Optional extras &amp; troubleshooting</summary>
+          <p><strong>Shading + colored candles (optional add-on):</strong> a separate study that shades the hold zone green and the stay-out zone red, and can color candles by trend. Add it next to the main study.</p>
+          <div class="dl-row"><a class="btn ghost small-btn" href="${FILES.zones.path}" download="${FILES.zones.name}">⬇ StockWise_Zones</a><button class="btn ghost small-btn" data-copy="zones">Copy code</button></div>
+          <p><strong>See a "!" at the top-left of the chart and no line?</strong> That means thinkorswim couldn't run the study. Click the "!" to see the error message (or open Edit studies, where the broken study is marked). Send me that message. In the meantime, use the <strong>Classic</strong> version: one line that changes color, the original that worked before.</p>
+          <div class="dl-row"><a class="btn ghost small-btn" href="${FILES.classic.path}" download="${FILES.classic.name}">⬇ Classic version</a><button class="btn ghost small-btn" data-copy="classic">Copy code</button></div>
+        </details>
       </section>
 
       <section class="card platform">

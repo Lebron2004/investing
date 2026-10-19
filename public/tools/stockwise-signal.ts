@@ -7,10 +7,12 @@
 #   BUY bubble   -> the line just flipped up (and price is above its 200-bar average).
 #   WAIT bubble  -> flipped up, but the long-term trend is still down: be careful.
 #   SELL bubble  -> the line just flipped down. Exit or tighten up.
-#   Shaded zone between the line and price: green = hold zone, red = stay-out zone.
 #   Labels at the top-left show the current status and stop price.
 #   The line is drawn as two separate lines (green / red) so there are no tall vertical
 #   jumps on the bar where the trend flips.
+#
+# OPTIONAL: for green/red shading and trend-colored candles, also add the separate
+# "StockWise_Zones" study from the same Tools page.
 #
 # TURN IT ON / OFF: Charts -> Studies -> Edit Studies -> select "StockWise_Signal_Line" -> remove,
 # or uncheck "Show study" in its settings (gear icon). Re-add it from the studies list anytime.
@@ -22,8 +24,6 @@ input multiplier = 3.0;
 input useTrendFilter = yes;
 input trendLength = 200;
 input showBubbles = yes;
-input showCloud = yes;
-input paintCandles = no;
 input showMovingAverages = no;
 
 def mid = (high + low) / 2;
@@ -43,7 +43,7 @@ def trendOk = useTrendFilter == no or close > trendMA;
 def flipUp = dir == 1 and dir[1] == -1;
 def flipDown = dir == -1 and dir[1] == 1;
 def rsiValue = RSI(length = 14);
-def gap = 0.6 * atrValue;   # keeps arrows and bubbles clear of the candles
+def bubbleOffset = 0.6 * atrValue;   # keeps arrows and bubbles clear of the candles
 
 # Two lines instead of one, so the chart never draws a vertical connector at a flip.
 plot HoldLine = if dir == 1 then sigLine else Double.NaN;
@@ -56,35 +56,29 @@ StayOutLine.SetDefaultColor(Color.RED);
 StayOutLine.SetLineWeight(3);
 StayOutLine.SetPaintingStrategy(PaintingStrategy.LINE);
 
-# Light shading between the line and price: green = hold zone, red = stay-out zone.
-AddCloud(if showCloud and dir == 1 then close else Double.NaN, if showCloud and dir == 1 then sigLine else Double.NaN, Color.DARK_GREEN, Color.DARK_GREEN);
-AddCloud(if showCloud and dir == -1 then sigLine else Double.NaN, if showCloud and dir == -1 then close else Double.NaN, Color.DARK_RED, Color.DARK_RED);
-
-plot BuyArrow = if flipUp and trendOk then low - gap else Double.NaN;
+plot BuyArrow = if flipUp and trendOk then low - bubbleOffset else Double.NaN;
 BuyArrow.SetPaintingStrategy(PaintingStrategy.ARROW_UP);
 BuyArrow.SetDefaultColor(Color.GREEN);
 BuyArrow.SetLineWeight(5);
 
-plot SellArrow = if flipDown then high + gap else Double.NaN;
+plot SellArrow = if flipDown then high + bubbleOffset else Double.NaN;
 SellArrow.SetPaintingStrategy(PaintingStrategy.ARROW_DOWN);
 SellArrow.SetDefaultColor(Color.RED);
 SellArrow.SetLineWeight(5);
 
-plot WaitArrow = if flipUp and trendOk == 0 then low - gap else Double.NaN;
+plot WaitArrow = if flipUp and trendOk == 0 then low - bubbleOffset else Double.NaN;
 WaitArrow.SetPaintingStrategy(PaintingStrategy.ARROW_UP);
 WaitArrow.SetDefaultColor(Color.GRAY);
 WaitArrow.SetLineWeight(3);
 
-plot Overheated = if dir == 1 and rsiValue > 75 and rsiValue[1] <= 75 then high + gap else Double.NaN;
+plot Overheated = if dir == 1 and rsiValue > 75 and rsiValue[1] <= 75 then high + bubbleOffset else Double.NaN;
 Overheated.SetPaintingStrategy(PaintingStrategy.POINTS);
 Overheated.SetDefaultColor(Color.ORANGE);
 Overheated.SetLineWeight(5);
 
-AddChartBubble(showBubbles and flipUp and trendOk, low - 2 * gap, "BUY " + AsDollars(close), Color.GREEN, no);
-AddChartBubble(showBubbles and flipUp and trendOk == 0, low - 2 * gap, "WAIT", Color.GRAY, no);
-AddChartBubble(showBubbles and flipDown, high + 2 * gap, "SELL " + AsDollars(close), Color.RED, yes);
-
-AssignPriceColor(if paintCandles then (if dir == 1 then Color.GREEN else Color.RED) else Color.CURRENT);
+AddChartBubble(showBubbles and flipUp and trendOk, low - 2 * bubbleOffset, "BUY " + AsDollars(close), Color.GREEN, no);
+AddChartBubble(showBubbles and flipUp and trendOk == 0, low - 2 * bubbleOffset, "WAIT", Color.GRAY, no);
+AddChartBubble(showBubbles and flipDown, high + 2 * bubbleOffset, "SELL " + AsDollars(close), Color.RED, yes);
 
 AddLabel(yes,
     "StockWise: " + (if dir == 1 then (if trendOk then "HOLD" else "HOLD (weak trend)") else "SELL / STAY OUT"),
