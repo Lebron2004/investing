@@ -651,3 +651,8 @@ body.compact-mode .container { padding: 10px 10px 20px; }
 .model-card .big-stats { margin: 12px 0; }
 .desk-promo { border: 2px solid var(--accent); }
 .desk-promo h2 { margin: 4px 0 6px; }
+.broker-ticket { border-top: 1px dashed var(--border); padding-top: 6px; }
+.broker-ticket summary { cursor: pointer; font-weight: 600; color: var(--accent); }
+.broker-ticket ol { padding-left: 18px; margin: 6px 0; }
+.broker-ticket li { margin-bottom: 4px; }
+.broker-ticket p { margin: 6px 0; }

@@ -177,8 +177,28 @@ function pickCard(p, i, compact, clock) {
       <span>Targets <strong class="up">${money(pl.t1)}</strong> / <strong class="up">${money(pl.t2)}</strong></span>
     </div>
     <div class="pick-size small">Buy <strong>${pl.shares}</strong> sh ≈ ${money(pl.cost, 0)} · max loss <span class="down">${money(pl.maxLoss)}</span> · sell ½ at target 1, move stop to entry</div>
+    ${brokerTicket(p)}
     ${compact ? '' : `<div class="pick-how small muted">${esc(pl.how)}${p.why?.length ? ` <em>AI is watching: ${p.why.map((w) => esc(w.label.toLowerCase())).join(', ')}.</em>` : ''}</div>`}
   </article>`;
+}
+
+// The exact order to type into a broker ticket (Schwab / thinkorswim and most others):
+// a "1st Triggers OCO" bracket: buy first; once filled, a stop-loss and a profit target go live,
+// and whichever fills first cancels the other.
+function brokerTicket(p) {
+  const pl = p.plan;
+  const breakout = pl.entry > p.price * 1.0005;
+  return `<details class="broker-ticket small">
+    <summary>How to enter this at your broker</summary>
+    <p>Conditional: <strong>1st Triggers OCO</strong> (not plain "OCO": that's only for exiting shares you already own).</p>
+    <ol>
+      <li><strong>Order 1 (entry):</strong> Buy ${pl.shares} ${esc(p.symbol)} · ${breakout ? `<strong>Stop market</strong> ${money(pl.entry)}` : `<strong>Limit</strong> ${money(pl.entry)}`} · Day
+        <div class="muted">${breakout ? 'A buy stop fills only if the price rises to the trigger: that\'s the breakout confirmation.' : 'A buy limit fills at this price or lower.'}</div></li>
+      <li><strong>Order 2 (stop-loss):</strong> Sell ${pl.shares} ${esc(p.symbol)} · <strong>Stop market</strong> ${money(pl.stop)} · Day</li>
+      <li><strong>Order 3 (profit target):</strong> Sell ${pl.shares} ${esc(p.symbol)} · <strong>Limit</strong> ${money(pl.t1)} · Day</li>
+    </ol>
+    <p class="muted">Orders 2 and 3 only go live after Order 1 fills, and whichever fills first cancels the other. "Day" orders expire at 4:00 PM, so if you're still holding near the close, sell manually (day trades shouldn't go overnight). Review everything before you submit: you're placing it, not StockWise.</p>
+  </details>`;
 }
 
 function modelCard(m) {
