@@ -33,6 +33,14 @@ export async function renderTools(app, q) {
       </div>
     </section>
 
+    <section class="card order-promo">
+      <div>
+        <h2>🧾 Order Helper</h2>
+        <p>Not sure how to enter a trade at your broker? Type in the stock, entry, stop-loss and target (or open it from any Day Trade Desk pick). It checks the order for mistakes and gives you numbered steps for <strong>Schwab, thinkorswim, Fidelity, Webull, Robinhood</strong> and others.</p>
+        <a class="btn" href="#/order">Open the Order Helper</a>
+      </div>
+    </section>
+
     <div class="grid-2 tools-top">
       <section class="card">
         <h2>How to read it</h2>

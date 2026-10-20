@@ -11,6 +11,7 @@ import { renderPractice } from './views/practice.js';
 import { renderClass } from './views/classroom.js';
 import { renderTools } from './views/tools.js';
 import { renderDesk } from './views/desk.js';
+import { renderOrderHelper } from './views/orders.js';
 import { registerServiceWorker } from './install.js';
 import { renderAcademy, renderLesson } from './views/academy.js';
 
@@ -32,6 +33,7 @@ const routes = [
   [/^\/trade\/([\w.-]+)$/, 'sizer', (m) => renderTrade(app, decodeURIComponent(m[1]))],
   [/^\/practice$/, 'practice', (m, q) => renderPractice(app, q)],
   [/^\/desk$/, 'desk', (m, q) => renderDesk(app, q)],
+  [/^\/order$/, 'tools', (m, q) => renderOrderHelper(app, q)],
   [/^\/tools$/, 'tools', (m, q) => renderTools(app, q)],
   [/^\/class$/, 'academy', (m, q) => renderClass(app, q)],
   [/^\/academy$/, 'academy', () => renderAcademy(app)],
