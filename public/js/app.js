@@ -12,6 +12,8 @@ import { renderClass } from './views/classroom.js';
 import { renderTools } from './views/tools.js';
 import { renderDesk } from './views/desk.js';
 import { renderOrderHelper } from './views/orders.js';
+import { renderAutopilot } from './views/autopilot.js';
+import { initBot } from './bot.js';
 import { registerServiceWorker } from './install.js';
 import { renderAcademy, renderLesson } from './views/academy.js';
 
@@ -34,6 +36,7 @@ const routes = [
   [/^\/practice$/, 'practice', (m, q) => renderPractice(app, q)],
   [/^\/desk$/, 'desk', (m, q) => renderDesk(app, q)],
   [/^\/order$/, 'tools', (m, q) => renderOrderHelper(app, q)],
+  [/^\/autopilot$/, 'autopilot', () => renderAutopilot(app)],
   [/^\/tools$/, 'tools', (m, q) => renderTools(app, q)],
   [/^\/class$/, 'academy', (m, q) => renderClass(app, q)],
   [/^\/academy$/, 'academy', () => renderAcademy(app)],
@@ -141,7 +144,11 @@ pill.addEventListener('click', () => {
   route(true);
 });
 
+// Pages that keep themselves up to date (and hold results you'd lose on a re-render).
+const SELF_UPDATING = /^#\/(autopilot)\b/;
+
 async function tick() {
+  if (SELF_UPDATING.test(location.hash)) return;
   const v = await checkForNewData();
   const liveDue = settings().finnhubKey && Date.now() - lastRender > 55000;
   if (v || liveDue) {
@@ -157,3 +164,4 @@ setInterval(tick, 60000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
 staticSite.then(showStatus);
 registerServiceWorker();
+initBot(); // AutoPilot keeps paper trading while any StockWise page is open

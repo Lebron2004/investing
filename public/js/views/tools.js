@@ -35,6 +35,14 @@ export async function renderTools(app, q) {
 
     <section class="card order-promo">
       <div>
+        <h2>🤖 AutoPilot: a day-trading bot (paper money)</h2>
+        <p>Set the rules: today's budget, risk per trade, daily loss limit, which sectors or symbols, and trading hours. The bot trades a practice account by itself while the site is open. Test and train it on past days first.</p>
+        <a class="btn" href="#/autopilot">Open AutoPilot</a>
+      </div>
+    </section>
+
+    <section class="card order-promo">
+      <div>
         <h2>🧾 Order Helper</h2>
         <p>Not sure how to enter a trade at your broker? Type in the stock, entry, stop-loss and target (or open it from any Day Trade Desk pick). It checks the order for mistakes and gives you numbered steps for <strong>Schwab, thinkorswim, Fidelity, Webull, Robinhood</strong> and others.</p>
         <a class="btn" href="#/order">Open the Order Helper</a>

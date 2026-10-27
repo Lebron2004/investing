@@ -41,7 +41,7 @@ jobs:
       - name: Run tests
         run: npm test
 
-      # Company fundamentals are cached between runs and refreshed about once a day.
+      # Company fundamentals (refreshed about once a day) and 5-minute bars for AutoPilot are cached between runs.
       - uses: actions/cache@v4
         with:
           path: .cache

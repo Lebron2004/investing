@@ -14,6 +14,7 @@ import { fetchHistory, fetchYahooIntraday, fundamentalsFor, searchYahoo, SYMBOL_
 import { trainDayModels } from './public/js/lib/daymodel.js';
 import { nyClock, intradaySnapshot, buildDeskData } from './public/js/lib/daytrade.js';
 import { summarize } from './public/js/lib/scan.js';
+import { fetchIntradayDays, demoIntradayDays, mergeDays, morningRecords } from './lib/replay-data.js';
 
 const PORT = Number(process.env.PORT) || 3000;
 const DEMO_ONLY = process.env.DATA_SOURCE === 'demo';
@@ -77,8 +78,9 @@ async function scanAll() {
 // Day Trade Desk: the AI is retrained twice a day; intraday 5-minute data refreshes every minute.
 async function dayTradeDesk() {
   const stocks = UNIVERSE.filter((u) => u.sector !== 'ETF');
+  const etfs = UNIVERSE.filter((u) => u.sector === 'ETF');
   const loaded = new Map();
-  const queue = [...stocks.map((u) => u.symbol), 'SPY', 'QQQ'];
+  const queue = [...UNIVERSE.map((u) => u.symbol), 'SPY', 'QQQ'];
   await Promise.all(Array.from({ length: 6 }, async () => {
     while (queue.length) {
       const s = queue.shift();
@@ -86,7 +88,7 @@ async function dayTradeDesk() {
     }
   }));
   const bench = loaded.get('SPY')?.candles;
-  const model = await cached('daymodel', async () => trainDayModels(stocks.filter((u) => loaded.has(u.symbol)).map((u) => ({ symbol: u.symbol, candles: loaded.get(u.symbol).candles })), bench), 12 * 3600e3);
+  const model = await dayModel(loaded, bench);
   const clock = nyClock();
   const intraday = new Map();
   if (clock.open && !DEMO_ONLY) {
@@ -114,7 +116,49 @@ async function dayTradeDesk() {
     model: model ? { trainedAt: model.trainedAt, samples: model.samples, testSamples: model.testSamples, testFrom: model.testFrom, features: model.features, big: strip(model.big), up: strip(model.up) } : null,
     market: { spy: marketRec('SPY'), qqq: marketRec('QQQ') },
     stocks: buildDeskData(stocks.filter((u) => loaded.has(u.symbol)).map((u) => ({ ...u, candles: loaded.get(u.symbol).candles, intraday: intraday.get(u.symbol) || null })), bench, model, clock),
+    etfs: buildDeskData(etfs.filter((u) => loaded.has(u.symbol)).map((u) => ({ ...u, candles: loaded.get(u.symbol).candles, intraday: intraday.get(u.symbol) || null })), bench, model, clock),
     source: DEMO_ONLY ? 'demo' : 'live',
+  };
+}
+
+const dayModel = (loaded, bench) => cached('daymodel', async () => trainDayModels(UNIVERSE.filter((u) => u.sector !== 'ETF' && loaded.has(u.symbol)).map((u) => ({ symbol: u.symbol, candles: loaded.get(u.symbol).candles })), bench), 12 * 3600e3);
+
+// AutoPilot replay data (see scripts/build-static.js): recent 5-minute bars + what the bot knew each morning.
+const intradayBars = new Map();
+async function replayData() {
+  const loaded = new Map();
+  const queue = [...UNIVERSE.map((u) => u.symbol), 'SPY'];
+  await Promise.all(Array.from({ length: 6 }, async () => {
+    while (queue.length) {
+      const s = queue.shift();
+      try { loaded.set(s, await history(s)); } catch { /* skip */ }
+    }
+  }));
+  const bench = loaded.get('SPY')?.candles;
+  const model = await dayModel(loaded, bench);
+  const clock = nyClock();
+  const unfinished = !clock.weekend && clock.minutes < 960 ? clock.day : null;
+  let anyReal = false;
+  const q = [...loaded.keys()];
+  await Promise.all(Array.from({ length: 6 }, async () => {
+    while (q.length) {
+      const sym = q.shift();
+      let days = DEMO_ONLY ? {} : await fetchIntradayDays(sym);
+      if (Object.keys(days).length) anyReal = true;
+      else days = demoIntradayDays(sym, loaded.get(sym).candles);
+      intradayBars.set(sym, mergeDays({}, days, { today: unfinished }));
+    }
+  }));
+  const members = UNIVERSE.filter((u) => loaded.has(u.symbol));
+  const days = Object.keys(intradayBars.get('SPY') || {}).sort().slice(-60);
+  return {
+    updated: new Date().toISOString(),
+    testFrom: model?.testFrom ?? null,
+    days,
+    sectors: Object.fromEntries(members.map((u) => [u.symbol, u.sector])),
+    records: morningRecords(members.map((u) => ({ ...u, candles: loaded.get(u.symbol).candles })), bench, model, days),
+    spy: Object.fromEntries(days.map((d) => [d, intradayBars.get('SPY')?.[d] || []])),
+    source: anyReal ? 'live' : 'demo',
   };
 }
 
@@ -154,6 +198,13 @@ async function handleApi(url, res) {
   if (p === '/api/status') return send(res, 200, { updated: new Date(Math.floor(Date.now() / CACHE_MS) * CACHE_MS).toISOString() });
   if (p === '/api/universe') return send(res, 200, { results: UNIVERSE });
   if (p === '/api/daytrade') return send(res, 200, await cached('desk', dayTradeDesk, 60e3));
+  if (p === '/api/replay') return send(res, 200, await cached('replay', replayData, 30 * 60e3));
+  if (p === '/api/intraday') {
+    const symbol = (url.searchParams.get('symbol') || '').toUpperCase();
+    if (!intradayBars.has(symbol)) await cached('replay', replayData, 30 * 60e3);
+    const days = intradayBars.get(symbol);
+    return days ? send(res, 200, { symbol, days }) : send(res, 404, { error: `No 5-minute data for ${symbol}` });
+  }
   if (p === '/api/scan') return send(res, 200, await cached('scan', scanAll));
   return send(res, 404, { error: 'Not found' });
 }

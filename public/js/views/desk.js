@@ -83,6 +83,7 @@ export async function renderDesk(app, q) {
         <ul>${tips.map((t) => `<li class="tip ${t.tone}">${esc(t.text)}</li>`).join('')}</ul>
       </section>
 
+      ${compact ? '' : '<section class="card"><h3>🤖 Want it to trade these by itself?</h3><p class="small">AutoPilot paper-trades the AI\'s picks with your rules: budget, loss limit, sectors and hours. <a href="#/autopilot">Set it up →</a></p></section>'}
       ${data.model && !compact ? modelCard(data.model) : ''}
       <p class="muted small">AI-ranked ideas, not advice. Day trading is risky and most day traders lose money. Practice first on the <a href="#/practice">Practice</a> tab.</p>`;
   };

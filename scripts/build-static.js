@@ -14,6 +14,7 @@ import { fetchHistory, fetchYahooIntraday, fundamentalsFor, dataFileName, SYMBOL
 import { trainDayModels } from '../public/js/lib/daymodel.js';
 import { nyClock, intradaySnapshot, buildDeskData } from '../public/js/lib/daytrade.js';
 import { summarize } from '../public/js/lib/scan.js';
+import { fetchIntradayDays, demoIntradayDays, mergeDays, morningRecords } from '../lib/replay-data.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const out = `${root}dist/`;
@@ -106,14 +107,16 @@ for (const [symbol, data] of loaded) {
 }
 
 // Day Trade Desk: train the AI on every stock's history, then score the next session.
+let model = null;
+const clock = nyClock();
 {
   const started = Date.now();
   const stocks = UNIVERSE.filter((u) => u.sector !== 'ETF' && loaded.has(u.symbol));
-  const model = benchmark ? trainDayModels(stocks.map((u) => ({ symbol: u.symbol, candles: loaded.get(u.symbol).candles })), benchmark) : null;
-  const clock = nyClock();
+  const etfs = UNIVERSE.filter((u) => u.sector === 'ETF' && loaded.has(u.symbol));
+  model = benchmark ? trainDayModels(stocks.map((u) => ({ symbol: u.symbol, candles: loaded.get(u.symbol).candles })), benchmark) : null;
   const intraday = new Map();
   if (clock.open && !demoOnly) {
-    const q = [...stocks.map((u) => u.symbol), 'SPY', 'QQQ'];
+    const q = [...stocks.map((u) => u.symbol), ...etfs.map((u) => u.symbol), 'SPY', 'QQQ'];
     await Promise.all(Array.from({ length: 6 }, async () => {
       while (q.length) {
         const sym = q.shift();
@@ -140,9 +143,56 @@ for (const [symbol, data] of loaded) {
     model: model ? { trainedAt: model.trainedAt, samples: model.samples, testSamples: model.testSamples, testFrom: model.testFrom, features: model.features, big: bigInfo, up: upInfo } : null,
     market: { spy: marketRec('SPY'), qqq: marketRec('QQQ') },
     stocks: desk,
+    // Sector ETFs aren't Desk picks, but AutoPilot may trade them if you allow ETFs.
+    etfs: buildDeskData(etfs.map((u) => ({ ...u, candles: loaded.get(u.symbol).candles, intraday: intraday.get(u.symbol) || null })), benchmark, model, clock),
     source: demoOnly ? 'demo' : 'live',
   }));
   console.log(`Day Trade Desk: ${desk.length} stocks scored, ${intraday.size} with intraday data, model ${model ? `AUC ${model.big.metrics.auc.toFixed(3)} (big) / ${model.up.metrics.auc.toFixed(3)} (up)` : 'not trained'} in ${((Date.now() - started) / 1000).toFixed(1)}s`);
+}
+
+// AutoPilot replay data: 5-minute bars for recent sessions (kept in .cache between runs so the
+// history grows past Yahoo's 60-day limit) plus what the bot knew each morning.
+{
+  const started = Date.now();
+  const members = UNIVERSE.filter((u) => loaded.has(u.symbol));
+  const syms = [...new Set([...members.map((u) => u.symbol), 'SPY'])].filter((s) => loaded.has(s));
+  await mkdir(`${out}data/intraday`, { recursive: true });
+  await mkdir(`${root}.cache/intraday`, { recursive: true });
+  const unfinished = !clock.weekend && clock.minutes < 960 ? clock.day : null;
+  const bars = new Map();
+  const q = [...syms];
+  let fetched = 0;
+  await Promise.all(Array.from({ length: 6 }, async () => {
+    while (q.length) {
+      const sym = q.shift();
+      const cacheFile = `${root}.cache/intraday/${dataFileName(sym)}`;
+      let cached = {};
+      if (!demoOnly) { try { cached = JSON.parse(await readFile(cacheFile, 'utf8')); } catch { /* first run */ } }
+      const fresh = demoOnly ? demoIntradayDays(sym, loaded.get(sym).candles) : await fetchIntradayDays(sym);
+      if (Object.keys(fresh).length) fetched++;
+      const merged = mergeDays(cached, fresh, { today: unfinished });
+      if (!demoOnly) await writeFile(cacheFile, JSON.stringify(merged));
+      bars.set(sym, merged);
+    }
+  }));
+  const days = Object.keys(bars.get('SPY') || {}).sort().slice(-60);
+  const records = morningRecords(members.map((u) => ({ ...u, candles: loaded.get(u.symbol).candles })), benchmark, model, days);
+  for (const sym of syms) {
+    const all = bars.get(sym) || {};
+    const keep = Object.fromEntries(days.filter((d) => all[d]).map((d) => [d, all[d]]));
+    await writeFile(`${out}data/intraday/${dataFileName(sym)}`, JSON.stringify({ symbol: sym, days: keep }));
+  }
+  await writeFile(`${out}data/replay.json`, JSON.stringify({
+    updated: manifest.updated,
+    testFrom: model?.testFrom ?? null,
+    days,
+    sectors: Object.fromEntries(members.map((u) => [u.symbol, u.sector])),
+    records,
+    spy: Object.fromEntries(days.map((d) => [d, bars.get('SPY')?.[d] || []])),
+    source: demoOnly ? 'demo' : 'live',
+  }));
+  console.log(`AutoPilot replay: ${days.length} past sessions, ${fetched}/${syms.length} symbols with fresh 5-minute data in ${((Date.now() - started) / 1000).toFixed(1)}s`);
+  if (!demoOnly && !fetched) console.warn('::warning::No 5-minute data could be downloaded, so AutoPilot\'s Test/Train uses whatever was cached.');
 }
 
 manifest.symbols.sort((a, b) => a.symbol.localeCompare(b.symbol));

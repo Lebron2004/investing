@@ -57,6 +57,8 @@ export function useDataVersion(v) {
   dataVersion = v;
   memo.clear();
   scanPromise = null;
+  replayPromise = null;
+  intradayMemo.clear();
 }
 export const lastUpdated = () => dataVersion;
 
@@ -66,13 +68,13 @@ export const lastUpdated = () => dataVersion;
 const quoteCache = new Map();
 export const liveStatus = { enabled: false, ok: null, at: null, error: null };
 
-async function liveQuote(symbol) {
+async function liveQuote(symbol, maxAge = 30000) {
   const key = settings().finnhubKey;
   liveStatus.enabled = !!key;
   if (!key) return null;
   const hit = quoteCache.get(symbol);
   if (hit?.pending) return hit.pending;
-  if (hit && Date.now() - hit.at < (hit.q ? 30000 : 60000)) return hit.q;
+  if (hit && Date.now() - hit.at < (hit.q ? maxAge : 60000)) return hit.q;
   const p = (async () => {
     try {
       const r = await fetch(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(symbol)}&token=${encodeURIComponent(key)}`);
@@ -97,10 +99,10 @@ async function liveQuote(symbol) {
 const dayOf = (t) => new Date(t).toISOString().slice(0, 10);
 
 // Live quotes for several symbols ({ SYM: quote }), or {} without a Finnhub key.
-export async function liveQuotes(symbols) {
+export async function liveQuotes(symbols, { maxAge } = {}) {
   if (!settings().finnhubKey) return {};
   const out = {};
-  await Promise.all(symbols.map(async (s) => { const q = await liveQuote(s); if (q) out[s] = q; }));
+  await Promise.all(symbols.map(async (s) => { const q = await liveQuote(s, maxAge); if (q) out[s] = q; }));
   return out;
 }
 
@@ -110,6 +112,30 @@ export async function getDeskData() {
   const r = await fetch(m ? `data/daytrade.json?t=${Date.now()}` : 'api/daytrade', { cache: 'no-store' });
   if (!r.ok) throw new Error('Day-trade data isn\'t available yet. It appears after the next site update.');
   return r.json();
+}
+
+// AutoPilot Test/Train: past sessions (what the bot knew each morning) and 5-minute bars per symbol.
+let replayPromise = null;
+export function getReplayData() {
+  replayPromise ??= staticSite.then(async (m) => {
+    const r = await fetch(m ? `data/replay.json?v=${encodeURIComponent(dataVersion || m.updated)}` : 'api/replay');
+    if (!r.ok) throw new Error('Past-day data isn\'t available yet. It appears after the next site update.');
+    return r.json();
+  });
+  replayPromise.catch(() => { replayPromise = null; });
+  return replayPromise;
+}
+const intradayMemo = new Map();
+export function getIntradayDays(symbol) {
+  if (!intradayMemo.has(symbol)) {
+    const p = staticSite.then(async (m) => {
+      const r = await fetch(m ? `data/intraday/${dataFileName(symbol)}?v=${encodeURIComponent(dataVersion || m.updated)}` : `api/intraday?symbol=${encodeURIComponent(symbol)}`);
+      return r.ok ? (await r.json()).days : {};
+    });
+    intradayMemo.set(symbol, p);
+    p.catch(() => intradayMemo.delete(symbol));
+  }
+  return intradayMemo.get(symbol);
 }
 
 // Returns a copy of the history with today's candle updated (or added) from the live quote.
