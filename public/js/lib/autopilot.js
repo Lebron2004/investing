@@ -143,9 +143,11 @@ export function pickWatchlist(records, rules, account) {
 }
 
 // --- One trading day --------------------------------------------------------------------------
-export function newDay(day, watchRecs, rules, account) {
+// broker: true when a real broker executes the orders (bot/schwab-bot.js). Then the broker's own
+// stop-loss and target orders close trades, and the runner reports fills back with the broker* functions.
+export function newDay(day, watchRecs, rules, account, { broker = false } = {}) {
   const s = {
-    day, rules, startCash: account.cash,
+    day, rules, startCash: account.cash, broker,
     watch: {}, spy: { open: null, last: null },
     positions: [], spent: 0, trades: 0, realized: 0, halted: null, done: false,
     log: [], fills: [],
@@ -316,16 +318,61 @@ function enter(s, w, m, fill, account) {
 
 function manage(s, pos, bar, account) {
   const { rules } = s;
+  if (s.broker) { // the broker's orders handle the stop, target and end-of-day sale
+    if (pos.filled) moveToBreakeven(s, pos, bar);
+    return;
+  }
   if (bar.l <= pos.stop) {
     const px = Math.min(pos.stop, bar.o) * (1 - SLIPPAGE);
     return exit(s, pos, bar.m, px, pos.stop >= pos.entry ? 'break-even stop' : 'stop-loss', account);
   }
   if (bar.h >= pos.target) return exit(s, pos, bar.m, Math.max(pos.target, bar.o), 'profit target', account);
   if (bar.m + (bar.h === bar.l ? 0 : 5) >= rules.flatMin) return exit(s, pos, bar.m, bar.c * (1 - SLIPPAGE), 'end of day (never holds overnight)', account);
+  moveToBreakeven(s, pos, bar);
+}
+
+function moveToBreakeven(s, pos, bar) {
+  const { rules } = s;
   if (rules.breakevenR > 0 && pos.stop < pos.entry && bar.h >= pos.entry + rules.breakevenR * pos.risk) {
     pos.stop = pos.entry;
     log(s, bar.m, pos.symbol, 'info', `${pos.symbol} is up ${rules.breakevenR}× its risk: stop moved to break-even (${money(pos.entry)}). This trade can't lose much now.`);
   }
+}
+
+// --- Real-broker mode: the runner reports what actually happened -----------------------------
+// The buy filled at the broker (possibly at a slightly different price than the bot assumed).
+export function brokerFilled(s, symbol, price, account, shares = null) {
+  const pos = s.positions.find((p) => p.symbol === symbol);
+  if (!pos || pos.filled) return;
+  const qty = shares > 0 ? shares : pos.shares;
+  const diff = r2(qty * price - pos.shares * pos.entry);
+  account.cash = r2(account.cash - diff);
+  s.spent = r2(s.spent + diff);
+  pos.entry = r2(price);
+  pos.shares = qty;
+  pos.filled = true;
+  log(s, null, symbol, 'info', `Broker filled the buy: ${qty} ${symbol} at ${money(price)}.`);
+}
+
+// The buy never filled (price ran away, or the broker rejected it): undo it.
+export function brokerCancelled(s, symbol, m, why, account) {
+  const pos = s.positions.find((p) => p.symbol === symbol);
+  if (!pos || pos.filled) return;
+  const cost = r2(pos.shares * pos.entry);
+  account.cash = r2(account.cash + cost);
+  s.spent = r2(s.spent - cost);
+  s.trades--;
+  s.positions = s.positions.filter((p) => p !== pos);
+  s.fills = s.fills.filter((f) => !(f.symbol === symbol && f.side === 'buy' && f.m === pos.entryM));
+  const w = s.watch[symbol];
+  if (w) { w.status = 'missed'; w.note = why; }
+  log(s, m, symbol, 'skip', `${symbol} buy didn't happen: ${why}`);
+}
+
+// The position was sold at the broker (stop, target, end of day, or by hand).
+export function brokerExit(s, symbol, m, price, why, account) {
+  const pos = s.positions.find((p) => p.symbol === symbol);
+  if (pos) exit(s, pos, m, price, why, account);
 }
 
 function exit(s, pos, m, rawPx, why, account) {
@@ -357,6 +404,13 @@ export function haltDay(s, m, why, prices = {}, account) {
     exit(s, pos, m, px * (1 - SLIPPAGE), why, account);
   }
   if (!s.halted) { s.halted = why; log(s, m, null, 'halt', why); }
+}
+
+// No new trades today; open positions are left to their (broker) stop and target.
+export function blockEntries(s, m, why) {
+  if (s.halted) return;
+  s.halted = why;
+  log(s, m, null, 'halt', why);
 }
 
 // Closes the day: sells anything still open at its last price and records the day's result.

@@ -3,3 +3,12 @@ node_modules/
 .DS_Store
 dist/
 .cache/
+
+# Schwab bot: private keys, login tokens and local state (never commit these)
+bot/config.json
+bot/.tokens.json
+bot/.tokens.json.tmp
+bot/state-*.json
+bot/rules.json
+bot/STOP
+bot/logs/

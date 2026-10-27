@@ -22,6 +22,14 @@ export async function renderAutopilot(app) {
       <section class="card" id="ap-report"></section>
     </div>
     <section class="card" id="ap-lab"></section>
+    <section class="card">
+      <h2>Let it trade your Schwab account</h2>
+      <p>The same bot can run on your own computer and place real orders in your Schwab account (they show up in thinkorswim). Every buy goes in as a <strong>1st Triggers OCO</strong> bracket with its stop-loss at Schwab, it never spends more than your budget, and it starts in a no-real-orders dry run. You'll need free Schwab API access (takes a few days to approve) and a quick Schwab login once a week.</p>
+      <ol class="small">
+        <li>Set your rules above, then press <strong>Download rules for the Schwab bot</strong>.</li>
+        <li>Follow the step-by-step guide: <a href="https://github.com/Lebron2004/investing/blob/claude/gallant-ritchie-fzr9xf/bot/README.md" target="_blank" rel="noopener">AutoPilot for Schwab setup guide ↗</a></li>
+      </ol>
+    </section>
     <section class="card ap-how">
       <h2>How AutoPilot trades</h2>
       <ol>
@@ -55,6 +63,14 @@ export async function renderAutopilot(app) {
     e.preventDefault();
     const rules = saveRules(readRules(form));
     drawRules(form, rules, 'Saved. The bot uses these rules from now on.');
+  });
+  form.addEventListener('click', (e) => {
+    if (!e.target.closest('[data-download]')) return;
+    const rules = normalizeRules({ ...readRules(form), startCash: botState().account.startCash });
+    const blob = new Blob([JSON.stringify({ savedFrom: 'StockWise AutoPilot', savedAt: new Date().toISOString(), rules }, null, 2)], { type: 'application/json' });
+    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'rules.json' });
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   });
   form.addEventListener('input', () => {
     const warn = ruleWarnings(normalizeRules(readRules(form)));
@@ -122,7 +138,7 @@ function drawRules(form, r, saved = '') {
       <label class="check"><input type="checkbox" name="marketFilter" ${r.marketFilter ? 'checked' : ''}> Only buy while the S&amp;P 500 (SPY) is up on the day</label>
     </fieldset>
     <ul class="ap-warn small" id="ap-warn">${ruleWarnings(r).map((w) => `<li>${esc(w)}</li>`).join('')}</ul>
-    <div class="ap-save"><button class="btn" type="submit">Save rules</button><span class="small up">${esc(saved)}</span></div>
+    <div class="ap-save"><button class="btn" type="submit">Save rules</button><button class="btn ghost small-btn" type="button" data-download>⬇ Download rules for the Schwab bot</button><span class="small up">${esc(saved)}</span></div>
     <p class="small muted">Paper account: ${money(r.startCash)} to start. To change that, use "Start over" in the report card.</p>`;
 }
 
