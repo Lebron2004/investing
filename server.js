@@ -15,6 +15,8 @@ import { trainDayModels } from './public/js/lib/daymodel.js';
 import { nyClock, intradaySnapshot, buildDeskData } from './public/js/lib/daytrade.js';
 import { summarize } from './public/js/lib/scan.js';
 import { fetchIntradayDays, demoIntradayDays, mergeDays, morningRecords } from './lib/replay-data.js';
+import { smartMoney } from './lib/sec.js';
+import { learnSettings } from './lib/learn.js';
 
 const PORT = Number(process.env.PORT) || 3000;
 const DEMO_ONLY = process.env.DATA_SOURCE === 'demo';
@@ -89,6 +91,7 @@ async function dayTradeDesk() {
   }));
   const bench = loaded.get('SPY')?.candles;
   const model = await dayModel(loaded, bench);
+  const smart = await getSmart().catch(() => null);
   const clock = nyClock();
   const intraday = new Map();
   if (clock.open && !DEMO_ONLY) {
@@ -115,11 +118,16 @@ async function dayTradeDesk() {
     clock,
     model: model ? { trainedAt: model.trainedAt, samples: model.samples, testSamples: model.testSamples, testFrom: model.testFrom, features: model.features, big: strip(model.big), up: strip(model.up) } : null,
     market: { spy: marketRec('SPY'), qqq: marketRec('QQQ') },
-    stocks: buildDeskData(stocks.filter((u) => loaded.has(u.symbol)).map((u) => ({ ...u, candles: loaded.get(u.symbol).candles, intraday: intraday.get(u.symbol) || null })), bench, model, clock),
-    etfs: buildDeskData(etfs.filter((u) => loaded.has(u.symbol)).map((u) => ({ ...u, candles: loaded.get(u.symbol).candles, intraday: intraday.get(u.symbol) || null })), bench, model, clock),
+    stocks: buildDeskData(stocks.filter((u) => loaded.has(u.symbol)).map((u) => ({ ...u, candles: loaded.get(u.symbol).candles, intraday: intraday.get(u.symbol) || null })), bench, model, clock, smart),
+    etfs: buildDeskData(etfs.filter((u) => loaded.has(u.symbol)).map((u) => ({ ...u, candles: loaded.get(u.symbol).candles, intraday: intraday.get(u.symbol) || null })), bench, model, clock, smart),
     source: DEMO_ONLY ? 'demo' : 'live',
   };
 }
+
+// Big-investor SEC data (refreshed twice a day; empty in demo mode or offline).
+const EMPTY_SMART = { updated: new Date().toISOString(), funds: [], insiders: {}, holdings: {}, insiderBuys: {}, bySymbol: {}, errors: ['Not loaded'] };
+const getSmart = () => (DEMO_ONLY ? Promise.resolve({ ...EMPTY_SMART, errors: ['Demo mode: SEC data not downloaded.'] })
+  : cached('smart', () => smartMoney({ symbols: UNIVERSE.filter((u) => u.sector !== 'ETF').map((u) => u.symbol), cacheDir: fileURLToPath(new URL('./.cache/sec', import.meta.url)) }), 12 * 3600e3));
 
 const dayModel = (loaded, bench) => cached('daymodel', async () => trainDayModels(UNIVERSE.filter((u) => u.sector !== 'ETF' && loaded.has(u.symbol)).map((u) => ({ symbol: u.symbol, candles: loaded.get(u.symbol).candles })), bench), 12 * 3600e3);
 
@@ -156,7 +164,7 @@ async function replayData() {
     testFrom: model?.testFrom ?? null,
     days,
     sectors: Object.fromEntries(members.map((u) => [u.symbol, u.sector])),
-    records: morningRecords(members.map((u) => ({ ...u, candles: loaded.get(u.symbol).candles })), bench, model, days),
+    records: morningRecords(members.map((u) => ({ ...u, candles: loaded.get(u.symbol).candles })), bench, model, days, await getSmart().catch(() => null)),
     spy: Object.fromEntries(days.map((d) => [d, intradayBars.get('SPY')?.[d] || []])),
     source: anyReal ? 'live' : 'demo',
   };
@@ -198,6 +206,12 @@ async function handleApi(url, res) {
   if (p === '/api/status') return send(res, 200, { updated: new Date(Math.floor(Date.now() / CACHE_MS) * CACHE_MS).toISOString() });
   if (p === '/api/universe') return send(res, 200, { results: UNIVERSE });
   if (p === '/api/daytrade') return send(res, 200, await cached('desk', dayTradeDesk, 60e3));
+  if (p === '/api/smartmoney') return send(res, 200, await getSmart());
+  if (p === '/api/learned') {
+    const r = await cached('replay', replayData, 30 * 60e3);
+    const learned = await cached('learned', async () => learnSettings({ ...r, sectorOf: r.sectors, barsOf: (sym, day) => intradayBars.get(sym)?.[day], source: r.source }), 30 * 60e3);
+    return learned ? send(res, 200, learned) : send(res, 404, { error: 'Not enough past days yet' });
+  }
   if (p === '/api/replay') return send(res, 200, await cached('replay', replayData, 30 * 60e3));
   if (p === '/api/intraday') {
     const symbol = (url.searchParams.get('symbol') || '').toUpperCase();

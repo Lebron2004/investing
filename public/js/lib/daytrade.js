@@ -2,6 +2,7 @@
 // list of day-trade ideas with exact entries, stops, targets and share counts. Pure functions.
 
 import { indicatorContext, featuresAt, predict, explain } from './daymodel.js';
+import { playbookContext, playbookAt, markLeaders, smartBits } from './playbook.js';
 
 // --- Market clock (New York time) ---------------------------------------------------
 export function nyClock(now = new Date()) {
@@ -69,7 +70,7 @@ export function intradaySnapshot(bars, avgDailyVolume) {
  * stocks: [{ symbol, name, sector, candles, intraday (snapshot or null) }], bench: SPY candles,
  * model: from trainDayModels(), clock: nyClock().
  */
-export function buildDeskData(stocks, bench, model, clock = nyClock()) {
+export function buildDeskData(stocks, bench, model, clock = nyClock(), smart = null) {
   const out = [];
   for (const s of stocks) {
     const c = s.candles;
@@ -82,6 +83,7 @@ export function buildDeskData(stocks, bench, model, clock = nyClock()) {
     if (!x) continue;
     const d = c[i];
     const avgVol = ctx.v20[i];
+    const pb = playbookAt(c, i, playbookContext(c, bench));
     out.push({
       symbol: s.symbol, name: s.name, sector: s.sector,
       prevClose: d.close, yHigh: d.high, yLow: d.low,
@@ -93,9 +95,19 @@ export function buildDeskData(stocks, bench, model, clock = nyClock()) {
       pUp: model ? predict(model.up, x, model) : null,
       why: model ? explain(model, 'big', x, 2) : [],
       intraday: clock.open && s.intraday?.date === clock.day ? s.intraday : null,
+      // Big-investor playbook checks (see playbook.js), known before the next session opens.
+      flags: pb.bits | smartBits(smart, s.symbol, nextDay(clock)), ret63: pb.ret63 == null ? null : Math.round(pb.ret63 * 1e4) / 1e4,
     });
   }
-  return out;
+  return markLeaders(out);
+}
+
+// The session these forecasts are for: today while the market is open (or before it), else tomorrow.
+function nextDay(clock) {
+  if (!clock.weekend && clock.minutes < 960) return clock.day;
+  const d = new Date(`${clock.day}T12:00:00Z`);
+  do d.setUTCDate(d.getUTCDate() + 1); while ([0, 6].includes(d.getUTCDay()));
+  return d.toISOString().slice(0, 10);
 }
 
 // --- Live update from a real-time quote (Finnhub /quote: c, h, l, o, pc, t) ---------------

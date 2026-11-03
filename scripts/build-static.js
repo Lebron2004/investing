@@ -15,6 +15,8 @@ import { trainDayModels } from '../public/js/lib/daymodel.js';
 import { nyClock, intradaySnapshot, buildDeskData } from '../public/js/lib/daytrade.js';
 import { summarize } from '../public/js/lib/scan.js';
 import { fetchIntradayDays, demoIntradayDays, mergeDays, morningRecords } from '../lib/replay-data.js';
+import { smartMoney } from '../lib/sec.js';
+import { learnSettings } from '../lib/learn.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const out = `${root}dist/`;
@@ -106,6 +108,21 @@ for (const [symbol, data] of loaded) {
   try { scan.push(summarize(data, { benchmark })); } catch (err) { console.warn(`::warning::${symbol}: ${err.message}`); }
 }
 
+// Smart money: famous funds' 13F holdings and insider purchases from SEC EDGAR (cached in .cache/sec).
+let smart = null;
+{
+  const started = Date.now();
+  if (demoOnly) {
+    smart = { updated: manifest.updated, funds: [], insiders: {}, holdings: {}, insiderBuys: {}, bySymbol: {}, errors: ['Demo mode: SEC data not downloaded.'] };
+  } else {
+    smart = await smartMoney({ symbols: UNIVERSE.filter((u) => u.sector !== 'ETF').map((u) => u.symbol), cacheDir: `${root}.cache/sec`, log: (m) => console.log(m) });
+  }
+  const inUni = (obj) => Object.fromEntries(Object.entries(obj).filter(([k]) => inUniverse.has(k)));
+  await writeFile(`${out}data/smartmoney.json`, JSON.stringify({ ...smart, holdings: inUni(smart.holdings), insiderBuys: inUni(smart.insiderBuys) }));
+  console.log(`Smart money: ${smart.funds.length} funds, insider buying in ${Object.keys(smart.insiders).length} stocks, ${((Date.now() - started) / 1000).toFixed(1)}s`);
+  for (const e of smart.errors.slice(0, 8)) console.warn(`::warning::SEC: ${e}`);
+}
+
 // Day Trade Desk: train the AI on every stock's history, then score the next session.
 let model = null;
 const clock = nyClock();
@@ -127,7 +144,7 @@ const clock = nyClock();
       }
     }));
   }
-  const desk = buildDeskData(stocks.map((u) => ({ ...u, candles: loaded.get(u.symbol).candles, intraday: intraday.get(u.symbol) || null })), benchmark, model, clock);
+  const desk = buildDeskData(stocks.map((u) => ({ ...u, candles: loaded.get(u.symbol).candles, intraday: intraday.get(u.symbol) || null })), benchmark, model, clock, smart);
   const marketRec = (sym) => {
     const c = loaded.get(sym)?.candles;
     if (!c) return null;
@@ -144,7 +161,7 @@ const clock = nyClock();
     market: { spy: marketRec('SPY'), qqq: marketRec('QQQ') },
     stocks: desk,
     // Sector ETFs aren't Desk picks, but AutoPilot may trade them if you allow ETFs.
-    etfs: buildDeskData(etfs.map((u) => ({ ...u, candles: loaded.get(u.symbol).candles, intraday: intraday.get(u.symbol) || null })), benchmark, model, clock),
+    etfs: buildDeskData(etfs.map((u) => ({ ...u, candles: loaded.get(u.symbol).candles, intraday: intraday.get(u.symbol) || null })), benchmark, model, clock, smart),
     source: demoOnly ? 'demo' : 'live',
   }));
   console.log(`Day Trade Desk: ${desk.length} stocks scored, ${intraday.size} with intraday data, model ${model ? `AUC ${model.big.metrics.auc.toFixed(3)} (big) / ${model.up.metrics.auc.toFixed(3)} (up)` : 'not trained'} in ${((Date.now() - started) / 1000).toFixed(1)}s`);
@@ -176,7 +193,7 @@ const clock = nyClock();
     }
   }));
   const days = Object.keys(bars.get('SPY') || {}).sort().slice(-60);
-  const records = morningRecords(members.map((u) => ({ ...u, candles: loaded.get(u.symbol).candles })), benchmark, model, days);
+  const records = morningRecords(members.map((u) => ({ ...u, candles: loaded.get(u.symbol).candles })), benchmark, model, days, smart);
   for (const sym of syms) {
     const all = bars.get(sym) || {};
     const keep = Object.fromEntries(days.filter((d) => all[d]).map((d) => [d, all[d]]));
@@ -191,6 +208,19 @@ const clock = nyClock();
     spy: Object.fromEntries(days.map((d) => [d, bars.get('SPY')?.[d] || []])),
     source: demoOnly ? 'demo' : 'live',
   }));
+
+  // Auto-learn: every build re-runs Train on the newest days the AI never trained on, and publishes
+  // the settings and big-investor tips that held up. AutoPilot can use them each morning (opt-in).
+  const learnStart = Date.now();
+  const learned = learnSettings({
+    days, records, testFrom: model?.testFrom, source: demoOnly ? 'demo' : 'live', updated: manifest.updated,
+    sectorOf: Object.fromEntries(members.map((u) => [u.symbol, u.sector])),
+    barsOf: (sym, day) => bars.get(sym)?.[day],
+  });
+  if (learned) {
+    await writeFile(`${out}data/learned.json`, JSON.stringify(learned));
+    console.log(`Auto-learn: best ${JSON.stringify(learned.settings)} → unseen days ${learned.best.test.totalR}R (defaults ${learned.defaults.test.totalR}R), held up: ${learned.heldUp} [${((Date.now() - learnStart) / 1000).toFixed(1)}s]`);
+  }
   console.log(`AutoPilot replay: ${days.length} past sessions, ${fetched}/${syms.length} symbols with fresh 5-minute data in ${((Date.now() - started) / 1000).toFixed(1)}s`);
   if (!demoOnly && !fetched) console.warn('::warning::No 5-minute data could be downloaded, so AutoPilot\'s Test/Train uses whatever was cached.');
 }

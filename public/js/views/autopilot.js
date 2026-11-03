@@ -1,4 +1,5 @@
-import { getReplayData, getIntradayDays, settings, money, pct, esc, toneOf } from '../api.js';
+import { getReplayData, getIntradayDays, getLearned, settings, money, pct, esc, toneOf } from '../api.js';
+import { TIPS, TIP } from '../lib/playbook.js';
 import { SECTORS } from '../lib/universe.js';
 import { nyClock, PHASES } from '../lib/daytrade.js';
 import { normalizeRules, ruleWarnings, replay, tune, botStats, fmtMin, previewEntry, pickWatchlist, triggerOf, OPEN_MIN } from '../lib/autopilot.js';
@@ -125,6 +126,12 @@ function drawRules(form, r, saved = '') {
         <label>Stocks to watch<input name="watch" type="number" min="1" max="12" value="${r.watch}"></label>
       </div>
     </fieldset>
+    <fieldset><legend>Big-investor playbook</legend>
+      <p class="hint">Rules from famous traders and investors. Each one you tick narrows which stocks the bot may trade. Not sure which help? <strong>Train</strong> below tests every one on past days.</p>
+      <div class="tips-list">${TIPS.map((t) => `<label class="tip-check"><input type="checkbox" name="tip" value="${t.key}" ${r.tips.includes(t.key) ? 'checked' : ''}><span><strong>${esc(t.title)}</strong> <span class="muted">(${esc(t.who)})</span><span class="hint">${esc(t.idea)}</span></span></label>`).join('')}</div>
+      <label class="check"><input type="checkbox" name="autoLearn" ${r.autoLearn ? 'checked' : ''}> <span><strong>Auto-learn</strong>: each morning, use the entry/exit settings and tips that tested best on the newest market days. StockWise retrains on fresh data every time the site updates. It only switches when the new settings also beat the defaults on days they weren't picked on. Your money limits never change.</span></label>
+      <div class="small muted" id="ap-learned"></div>
+    </fieldset>
     <fieldset><legend>Timing and exits</legend>
       <div class="row three">
         <label>Opening range<select name="orMinutes">${timeOpts([[15, 'First 15 min'], [30, 'First 30 min'], [60, 'First hour']], r.orMinutes)}</select></label>
@@ -139,7 +146,14 @@ function drawRules(form, r, saved = '') {
     </fieldset>
     <ul class="ap-warn small" id="ap-warn">${ruleWarnings(r).map((w) => `<li>${esc(w)}</li>`).join('')}</ul>
     <div class="ap-save"><button class="btn" type="submit">Save rules</button><button class="btn ghost small-btn" type="button" data-download>⬇ Download rules for the Schwab bot</button><span class="small up">${esc(saved)}</span></div>
-    <p class="small muted">Paper account: ${money(r.startCash)} to start. To change that, use "Start over" in the report card.</p>`;
+    <p class="small muted">Paper account: ${money(r.startCash)} to start. To change that, use "Start over" in the report card.</p>`;  showLearned(form.querySelector('#ap-learned'));
+}
+
+async function showLearned(el) {
+  const l = await getLearned().catch(() => null);
+  if (!el?.isConnected) return;
+  if (!l?.settings) { el.textContent = 'Learned settings appear after the next site update.'; return; }
+  el.innerHTML = `Latest training (${esc(new Date(l.updated).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }))}, ${l.testDays[2]} unseen days): <strong>${esc(describe(l.settings))}</strong> made ${fmtR(l.best.test.totalR)} on the unseen days vs ${fmtR(l.defaults.test.totalR)} for the defaults. ${l.heldUp ? '<span class="up">Held up, so auto-learn will use it.</span>' : '<span class="flat">Didn\'t hold up, so auto-learn keeps your settings.</span>'}${l.source === 'demo' ? ' (demo data)' : ''}`;
 }
 
 function readRules(form) {
@@ -153,6 +167,7 @@ function readRules(form) {
     allow: f.get('allow'), block: f.get('block'), minPrice: n('minPrice') ?? 0, maxPrice: n('maxPrice') ?? 0, watch: n('watch'),
     orMinutes: n('orMinutes'), lastEntryMin: n('lastEntryMin'), flatMin: n('flatMin'), targetR: n('targetR'), breakevenR: n('breakevenR'),
     marketFilter: f.get('marketFilter') === 'on',
+    tips: f.getAll('tip'), autoLearn: f.get('autoLearn') === 'on',
   };
 }
 
@@ -329,7 +344,7 @@ async function loadDays(rules, scope, progress) {
   if (unseen) days = days.filter((d) => d >= data.testFrom);
   const list = days.map((day) => ({
     day,
-    records: (data.records[day] || []).map(([symbol, prevClose, atr, pBig, dollarVol]) => ({ symbol, sector: data.sectors[symbol], prevClose, atr, pBig, dollarVol })),
+    records: (data.records[day] || []).map(([symbol, prevClose, atr, pBig, dollarVol, flags]) => ({ symbol, sector: data.sectors[symbol], prevClose, atr, pBig, dollarVol, flags })),
     spy: data.spy[day] || [],
     bars: {},
   }));
@@ -370,7 +385,7 @@ function verdict(s) {
   return '<div class="notice warn small"><strong>Lost money on these days.</strong> That\'s normal for most strategies in some markets, and exactly why you test on paper first. Try Train, or different sectors.</div>';
 }
 
-const describe = (x) => `${x.orMinutes}-min range · target ${x.targetR}× · break-even ${x.breakevenR ? 'on' : 'off'} · ${x.marketFilter ? 'S&P filter' : 'any market'}`;
+const describe = (x) => `${x.orMinutes}-min range · target ${x.targetR}× · break-even ${x.breakevenR ? 'on' : 'off'} · ${x.marketFilter ? 'S&P filter' : 'any market'}${x.tips?.length ? ` · ${x.tips.map((k) => TIP[k]?.who).join(', ')}` : ''}`;
 const fmtR = (r) => `${r > 0 ? '+' : ''}${r.toFixed(1)}R`;
 
 function trainResult(t, days) {
@@ -385,7 +400,20 @@ function trainResult(t, days) {
     ${t.heldUp
       ? `<div class="notice small"><strong>The trained settings also did better on the unseen days.</strong> That's a good sign, though still no guarantee. <button class="btn small-btn" type="button" data-apply='${esc(JSON.stringify(b.settings))}'>Use these settings</button></div>`
       : `<div class="notice warn small"><strong>The "best" settings didn't hold up on unseen days</strong> (or nothing made money there). Changing settings would just be fitting past noise, so keep your current ones and gather more paper results. ${JSON.stringify(b.settings) !== JSON.stringify(c.settings) ? `<button class="btn ghost small-btn" type="button" data-apply='${esc(JSON.stringify(b.settings))}'>Use them anyway</button>` : ''}</div>`}
+    ${tipTable(t)}
     <details class="small"><summary>Top 5 on the training days</summary><ol>${t.leaderboard.map((x) => `<li>${describe(x.settings)}: ${fmtR(x.train.totalR)} (${x.train.trades} trades, ${x.train.winRate != null ? pct(x.train.winRate, 0) : '—'} wins)</li>`).join('')}</ol></details>`;
+}
+
+// How each big-investor tip did on top of the best settings: picked on the older days only,
+// then shown on the newer days too so you can see whether it really helped.
+function tipTable(t) {
+  const b = t.baseline;
+  const cell = (x, base) => `<td class="num ${toneOf(x.totalR - base.totalR)}">${fmtR(x.totalR)} <span class="sub">${x.trades} trades</span></td>`;
+  return `<h3>Which big-investor tips helped?</h3>
+    <p class="small muted">Each tip was added on its own to the best settings. Without any tip: ${fmtR(b.train.totalR)} on the training days, ${fmtR(b.test.totalR)} on the unseen days. Green = better than that, red = worse. A tip is only kept ("✓") if it helped on the training days by at least 1R with enough trades left.</p>
+    <div class="table-wrap"><table class="table compact"><thead><tr><th>Tip</th><th class="num">Training days</th><th class="num">Unseen days</th><th>Kept</th></tr></thead><tbody>
+    ${t.tips.map((x) => `<tr><td><strong>${esc(TIP[x.key].who)}</strong><div class="sub">${esc(TIP[x.key].title)}</div></td>${cell(x.train, b.train)}${cell(x.test, b.test)}<td>${x.keep ? '✓' : ''}</td></tr>`).join('')}
+    </tbody></table></div>`;
 }
 
 // One past trade on its 5-minute chart, plus the bot's own log for that stock that day.

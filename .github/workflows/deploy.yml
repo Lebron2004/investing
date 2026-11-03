@@ -50,6 +50,10 @@ jobs:
 
       - name: Download prices and build site
         run: node scripts/build-static.js
+        env:
+          # Optional repository variable: the SEC asks automated tools to identify themselves,
+          # e.g. "Your Name you@example.com". A generic name is used if it isn't set.
+          SEC_USER_AGENT: ${{ vars.SEC_USER_AGENT }}
 
       - uses: actions/configure-pages@v5
         if: github.ref_name == github.event.repository.default_branch

@@ -1,3 +1,4 @@
+import { smartBox } from './investors.js';
 import { getAnalysis, settings, saveSettings, money, pct, num, shares, toneOf, esc, badge, scoreBar, demoNotice, gradeChips, bigMoney } from '../api.js';
 import { positionSize, sellPlan, RISK_PROFILES } from '../lib/sizing.js';
 import { mountChart } from '../chart.js';
@@ -50,6 +51,7 @@ export async function renderAnalyze(app, symbol) {
       <h2>${esc(v.title)}</h2>
       <p>${esc(v.text)}</p>
     </section>
+    <div id="smart-box"></div>
 
     <section class="card">
       <div class="card-head">
@@ -185,6 +187,7 @@ export async function renderAnalyze(app, symbol) {
     app.querySelectorAll('#range button').forEach((x) => x.classList.toggle('on', x === b));
     chart.setBars(Number(b.dataset.bars));
   });
+  smartBox(app.querySelector('#smart-box'), symbol);
   app.querySelector('#watch-btn').addEventListener('click', (e) => {
     const on = toggleWatch(symbol);
     e.target.textContent = on ? '✓ On watchlist' : '+ Add to watchlist';

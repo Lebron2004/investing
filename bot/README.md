@@ -77,6 +77,11 @@ GitHub.
 
 Change your rules any time the same way, then restart the bot.
 
+If you tick **Auto-learn** on the AutoPilot page, the Schwab bot also downloads the site's latest
+learned settings each morning. These are the entry/exit settings and big-investor tips that tested
+best on recent days the model never trained on. It uses them only if they also beat the defaults
+on those days. Your budget and loss limits are never changed.
+
 ## Step 5: Log in and test
 
 ```

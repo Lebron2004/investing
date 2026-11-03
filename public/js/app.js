@@ -13,6 +13,7 @@ import { renderTools } from './views/tools.js';
 import { renderDesk } from './views/desk.js';
 import { renderOrderHelper } from './views/orders.js';
 import { renderAutopilot } from './views/autopilot.js';
+import { renderInvestors } from './views/investors.js';
 import { initBot } from './bot.js';
 import { registerServiceWorker } from './install.js';
 import { renderAcademy, renderLesson } from './views/academy.js';
@@ -37,6 +38,7 @@ const routes = [
   [/^\/desk$/, 'desk', (m, q) => renderDesk(app, q)],
   [/^\/order$/, 'tools', (m, q) => renderOrderHelper(app, q)],
   [/^\/autopilot$/, 'autopilot', () => renderAutopilot(app)],
+  [/^\/investors$/, 'ideas', () => renderInvestors(app)],
   [/^\/tools$/, 'tools', (m, q) => renderTools(app, q)],
   [/^\/class$/, 'academy', (m, q) => renderClass(app, q)],
   [/^\/academy$/, 'academy', () => renderAcademy(app)],

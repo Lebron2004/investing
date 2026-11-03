@@ -755,3 +755,15 @@ body.compact-mode .container { padding: 10px 10px 20px; }
 .ap-chart .mark.buy circle { fill: var(--accent); } .ap-chart .mark.sell circle { fill: #f59e0b; }
 .ap-chart .mark text { font-size: 11px; font-weight: 700; fill: var(--text); paint-order: stroke; stroke: var(--surface); stroke-width: 3px; }
 .ap-how ol li { margin-bottom: 6px; }
+.tips-list { display: grid; gap: 6px; margin: 8px 0 10px; }
+.tip-check { display: flex; flex-direction: row; gap: 8px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); font-weight: 400; cursor: pointer; }
+.tip-check input { margin-top: 3px; }
+.tip-check .hint { display: block; margin-top: 2px; }
+#ap-rules label.check span { font-weight: 400; }
+.fund-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; margin-bottom: 16px; }
+.fund-grid .card { margin: 0; }
+.holdings { padding-left: 22px; margin: 6px 0; }
+.holdings li { padding: 3px 0; }
+.holdings .pct { float: right; font-variant-numeric: tabular-nums; margin-left: 6px; }
+.smart-box .chip { display: inline-flex; gap: 4px; align-items: center; padding: 4px 10px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); margin: 0 6px 6px 0; font-size: .88rem; }
+.section-title { margin: 22px 0 10px; }

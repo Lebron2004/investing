@@ -2,11 +2,11 @@
 // page is open (in this tab or the installed app), checking prices every 30 seconds.
 // State lives in localStorage so it survives reloads. Only one tab trades at a time.
 
-import { getDeskData, liveQuotes, settings, store } from './api.js';
+import { getDeskData, getLearned, liveQuotes, settings, store } from './api.js';
 import { nyClock } from './lib/daytrade.js';
 import {
   DEFAULT_RULES, normalizeRules, newBotAccount, pickWatchlist, newDay, step, endDay, setMarket,
-  setOpeningRange, haltDay, rebuildWatch, OPEN_MIN,
+  setOpeningRange, haltDay, rebuildWatch, applyLearned, OPEN_MIN,
 } from './lib/autopilot.js';
 
 const KEY = 'autopilot';
@@ -76,7 +76,7 @@ export function resetBot(startCash) {
 }
 
 const deskRecords = (data) => [...(data.stocks || []), ...(data.etfs || [])]
-  .map((r) => ({ symbol: r.symbol, sector: r.sector, prevClose: r.prevClose, atr: r.atr, pBig: r.pBig, dollarVol: r.dollarVol, intraday: r.intraday }));
+  .map((r) => ({ symbol: r.symbol, sector: r.sector, prevClose: r.prevClose, atr: r.atr, pBig: r.pBig, dollarVol: r.dollarVol, flags: r.flags, intraday: r.intraday }));
 
 function claimLock() {
   const lock = store.get(LOCK, null);
@@ -128,9 +128,12 @@ async function runTick() {
     st = botState(); // the user may have changed something while we waited
     const recs = deskRecords(data);
     if (!st.today) {
-      const dayRules = { ...st.rules, budget: Math.min(st.rules.budget, st.account.cash) };
+      const learned = st.rules.autoLearn ? await getLearned().catch(() => null) : null;
+      const { rules: learnedRules, note } = applyLearned(st.rules, learned);
+      const dayRules = { ...learnedRules, budget: Math.min(st.rules.budget, st.account.cash) };
       const { watch } = pickWatchlist(recs, dayRules, st.account);
       st.today = newDay(clock.day, watch, dayRules, st.account);
+      if (note) st.today.log.push({ m: clock.minutes, symbol: null, kind: 'info', text: note });
       const ageH = (Date.now() - Date.parse(data.updated)) / 3600e3;
       if (ageH > 30) st.today.log.push({ m: clock.minutes, symbol: null, kind: 'info', text: `Heads-up: the AI's forecasts are from ${new Date(data.updated).toLocaleDateString('en-US')} (the site hasn't updated since).` });
       // The site's 30-minute opening range is exact, so use it when the bot starts after 10:00.

@@ -14,6 +14,8 @@
 // Hard limits it can never break: budget, risk per trade, daily loss limit, trades per day,
 // open positions, allowed markets/symbols, trading hours and (optionally) the pattern-day-trader rule.
 
+import { TIP, passesTips, tipNames } from './playbook.js';
+
 const r2 = (n) => Math.round(n * 100) / 100;
 export const OPEN_MIN = 570;   // 9:30 New York
 export const CLOSE_MIN = 960;  // 4:00 New York
@@ -43,6 +45,8 @@ export const DEFAULT_RULES = {
   breakevenR: 1,       // move the stop to break-even at this multiple (0 = never)
   marketFilter: true,  // only buy while SPY is above its opening price
   maxChase: 0.005,     // don't buy more than 0.5% above the trigger
+  tips: [],            // big-investor playbook filters (see playbook.js)
+  autoLearn: false,    // each morning, use the settings and tips that tested best on recent unseen days
 };
 
 const num = (v, d, lo, hi) => { const n = Number(v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d; };
@@ -75,6 +79,8 @@ export function normalizeRules(input = {}) {
     breakevenR: num(x.breakevenR, d.breakevenR, 0, 10),
     marketFilter: !!x.marketFilter,
     maxChase: num(x.maxChase, d.maxChase, 0, 0.05),
+    tips: [...new Set((Array.isArray(x.tips) ? x.tips : []).filter((k) => TIP[k]))],
+    autoLearn: !!x.autoLearn,
   };
   r.budget = Math.min(r.budget, r.startCash);
   return r;
@@ -90,6 +96,17 @@ export function ruleWarnings(r) {
   if (OPEN_MIN + r.orMinutes >= r.lastEntryMin) w.push('The opening range ends after the last-buy time, so it can\'t buy at all.');
   if (r.allow.length && r.allow.every((s) => r.block.includes(s))) w.push('Every allowed symbol is also blocked.');
   return w;
+}
+
+// Auto-learn: apply the settings the site's daily Train run found (data/learned.json), but only if
+// they also beat the defaults on unseen days. Money limits are never changed. Your own tips stay on.
+export function applyLearned(rules, learned) {
+  if (!rules.autoLearn) return { rules, note: null };
+  if (!learned?.settings) return { rules, note: 'Auto-learn: no learned settings available yet, so your own settings are used.' };
+  if (!learned.heldUp) return { rules, note: 'Auto-learn: the latest training didn\'t find anything that held up on unseen days, so your own settings are used today.' };
+  const x = learned.settings;
+  const next = normalizeRules({ ...rules, orMinutes: x.orMinutes, targetR: x.targetR, breakevenR: x.breakevenR, marketFilter: x.marketFilter, tips: [...new Set([...(rules.tips || []), ...(x.tips || [])])] });
+  return { rules: { ...next, budget: rules.budget }, note: `Auto-learn: using today's learned settings (${x.orMinutes}-min range, target ${x.targetR}×, break-even ${x.breakevenR ? 'on' : 'off'}, ${x.marketFilter ? 'S&P filter' : 'any market'}${x.tips?.length ? `, tips: ${tipNames(x.tips).join(', ')}` : ''}).` };
 }
 
 // --- Pattern-day-trader rule ---------------------------------------------------------------
@@ -136,6 +153,7 @@ export function pickWatchlist(records, rules, account) {
     if (atrPct < 0.008 || atrPct > 0.12) return out('too quiet or too wild');
     if (!rules.fractional && r.prevClose > cash) return out('one share costs more than the budget');
     if (!rules.fractional && riskBudget < 0.4 * r.atr) return out('too volatile for your risk per trade');
+    if (!passesTips(r.flags, rules.tips)) return out('doesn\'t pass your big-investor playbook');
     return true;
   });
   ok.sort((a, b) => (b.pBig ?? 0) - (a.pBig ?? 0));
@@ -154,8 +172,9 @@ export function newDay(day, watchRecs, rules, account, { broker = false } = {}) 
     pdtUsed: dayTradesInWindow(account, day),
   };
   for (const r of watchRecs) s.watch[r.symbol] = watchEntry(r);
+  const who = tipNames(rules.tips);
   log(s, OPEN_MIN - 30, null, 'info', watchRecs.length
-    ? `Watching ${watchRecs.map((r) => r.symbol).join(', ')} (the AI's most likely big movers that fit your rules).`
+    ? `Watching ${watchRecs.map((r) => r.symbol).join(', ')} (the AI's most likely big movers that fit your rules${who.length ? ` and ${[...new Set(who)].join(', ')}'s rules` : ''}).`
     : 'No stock fits your rules today, so the bot will sit out.');
   return s;
 }
@@ -248,6 +267,10 @@ export function step(s, symbol, bar, account) {
   if (w.status !== 'waiting') return s;
   const trigger = triggerOf(w);
   if (bar.h < trigger) return s;
+  if (rules.tips?.includes('noGap') && w.open > 0 && w.prevClose > 0 && Math.abs(w.open / w.prevClose - 1) > 0.04) {
+    skip(s, w, bar.m, `it opened ${((w.open / w.prevClose - 1) * 100).toFixed(1)}% away from yesterday's close (your skip-big-gaps rule)`);
+    return s;
+  }
   const block = entryBlock(s, bar.m);
   if (block) { skip(s, w, bar.m, block); return s; }
   const fillRaw = Math.max(trigger, bar.o);
@@ -486,6 +509,8 @@ export const TUNE_GRID = {
   marketFilter: [true, false],
 };
 
+const TIPS_FOR_TUNE = ['above200', 'trend', 'leader', 'market', 'nearHigh', 'nr7', 'funds', 'insider', 'noGap'];
+
 export function tune(rulesIn, days, { minTrades = 6 } = {}) {
   const base = normalizeRules(rulesIn);
   const half = Math.floor(days.length / 2);
@@ -495,23 +520,44 @@ export function tune(rulesIn, days, { minTrades = 6 } = {}) {
     const { stats } = replay(rules, ds);
     return { totalR: stats.totalR, trades: stats.trades, winRate: stats.winRate };
   };
+  // 1. Entry/exit settings, with no playbook filters.
   const combos = [];
   for (const orMinutes of TUNE_GRID.orMinutes) for (const targetR of TUNE_GRID.targetR)
     for (const breakevenR of TUNE_GRID.breakevenR) for (const marketFilter of TUNE_GRID.marketFilter)
       combos.push({ orMinutes, targetR, breakevenR, marketFilter });
-  const results = combos.map((c) => ({ settings: c, train: score({ ...base, ...c }, trainDays) }));
+  const results = combos.map((c) => ({ settings: { ...c, tips: [] }, train: score({ ...base, ...c, tips: [] }, trainDays) }));
   const usable = results.filter((x) => x.train.trades >= minTrades);
   const pool = usable.length ? usable : results;
   pool.sort((a, b) => b.train.totalR - a.train.totalR);
   const best = pool[0];
-  const current = { orMinutes: base.orMinutes, targetR: base.targetR, breakevenR: base.breakevenR, marketFilter: base.marketFilter };
+
+  // 2. Each big-investor tip on top of those settings. A tip is kept only if it improved the
+  //    training days by at least 1R and still left enough trades. The newer days aren't looked at here.
+  const plain = { ...base, ...best.settings, tips: [] };
+  const tips = TIPS_FOR_TUNE.map((key) => {
+    const train = score({ ...plain, tips: [key] }, trainDays);
+    return { key, train, keep: train.trades >= minTrades && train.totalR >= best.train.totalR + 1 };
+  });
+  const learned = tips.filter((t) => t.keep).map((t) => t.key);
+  if (learned.length) {
+    const together = score({ ...plain, tips: learned }, trainDays);
+    if (together.trades >= minTrades && together.totalR >= best.train.totalR + 1) best.train = together;
+    else learned.length = 0;
+  }
+  best.settings = { ...best.settings, tips: learned };
+  // Unseen-day results: reported for every tip, but never used to pick.
+  for (const t of tips) t.test = score({ ...plain, tips: [t.key] }, testDays);
+  const plainTest = score(plain, testDays);
+
+  const current = { orMinutes: base.orMinutes, targetR: base.targetR, breakevenR: base.breakevenR, marketFilter: base.marketFilter, tips: base.tips };
   best.test = score({ ...base, ...best.settings }, testDays);
   const currentScores = { train: score(base, trainDays), test: score(base, testDays) };
   return {
     trainDays: trainDays.map((d) => d.day), testDays: testDays.map((d) => d.day),
-    tried: combos.length,
+    tried: combos.length + tips.length,
     best, current: { settings: current, ...currentScores },
     leaderboard: pool.slice(0, 5),
+    tips, baseline: { train: score(plain, trainDays), test: plainTest },
     heldUp: best.test.totalR > currentScores.test.totalR && best.test.totalR > 0,
   };
 }

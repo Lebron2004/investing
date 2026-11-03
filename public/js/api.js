@@ -125,6 +125,22 @@ export function getReplayData() {
   replayPromise.catch(() => { replayPromise = null; });
   return replayPromise;
 }
+// Today's auto-learned AutoPilot settings, and big-investor (SEC) data. Always fetched fresh.
+export async function getLearned() {
+  const m = await staticSite;
+  const r = await fetch(m ? `data/learned.json?t=${Date.now()}` : 'api/learned', { cache: 'no-store' });
+  return r.ok ? r.json() : null;
+}
+let smartPromise = null;
+export function getSmartMoney() {
+  smartPromise ??= staticSite.then(async (m) => {
+    const r = await fetch(m ? `data/smartmoney.json?v=${encodeURIComponent(dataVersion || m.updated)}` : 'api/smartmoney');
+    if (!r.ok) throw new Error('Big-investor data isn\'t available yet. It appears after the next site update.');
+    return r.json();
+  });
+  smartPromise.catch(() => { smartPromise = null; });
+  return smartPromise;
+}
 const intradayMemo = new Map();
 export function getIntradayDays(symbol) {
   if (!intradayMemo.has(symbol)) {

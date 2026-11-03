@@ -181,6 +181,10 @@ async function run() {
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       return r.json();
     },
+    getLearned: async () => {
+      const r = await fetch(`${c.siteUrl}/data/learned.json?t=${Date.now()}`, { cache: 'no-store' });
+      return r.ok ? r.json() : null;
+    },
     notify, log: logger,
   });
   await logger(`AutoPilot started in ${live ? 'LIVE mode (real orders)' : 'DRY-RUN mode (no real orders)'} on account ${mask(number)}. Press Ctrl+C to stop (it sells what it holds first).`);

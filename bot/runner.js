@@ -12,7 +12,7 @@
 import { nyClock } from '../public/js/lib/daytrade.js';
 import {
   normalizeRules, newBotAccount, pickWatchlist, newDay, step, endDay, setMarket, setOpeningRange,
-  blockEntries, brokerFilled, brokerCancelled, brokerExit, triggerOf, OPEN_MIN,
+  blockEntries, applyLearned, brokerFilled, brokerCancelled, brokerExit, triggerOf, OPEN_MIN,
 } from '../public/js/lib/autopilot.js';
 import { nyDayMinute } from '../lib/replay-data.js';
 import { bracketOrder, exitOco, marketSell, flattenOrder, fillPrice, isDone, LoginNeeded } from './schwab.js';
@@ -21,14 +21,14 @@ const r2 = (n) => Math.round(n * 100) / 100;
 const ENTRY_TIMEOUT_MS = 90e3; // cancel a buy that hasn't filled in 90 seconds (the price ran away)
 
 const deskRecords = (data) => [...(data.stocks || []), ...(data.etfs || [])]
-  .map((r) => ({ symbol: r.symbol, sector: r.sector, prevClose: r.prevClose, atr: r.atr, pBig: r.pBig, dollarVol: r.dollarVol }));
+  .map((r) => ({ symbol: r.symbol, sector: r.sector, prevClose: r.prevClose, atr: r.atr, pBig: r.pBig, dollarVol: r.dollarVol, flags: r.flags }));
 
 /**
  * api: a Schwab client (or a fake in tests). accountHash: Schwab's id for the account.
  * state: { account, today } (persisted by the caller via save()). getSiteData(): the website's
  * data/daytrade.json (AI forecasts). notify(text): phone notification. log(text): console/file.
  */
-export function createRunner({ api, accountHash, rules: rulesIn, mode = 'dry-run', state, save, getSiteData, notify = () => {}, log = () => {}, now = () => Date.now() }) {
+export function createRunner({ api, accountHash, rules: rulesIn, mode = 'dry-run', state, save, getSiteData, getLearned = async () => null, notify = () => {}, log = () => {}, now = () => Date.now() }) {
   const live = mode === 'live';
   const rules = normalizeRules(rulesIn);
   state.account ??= newBotAccount(rules);
@@ -107,7 +107,10 @@ export function createRunner({ api, accountHash, rules: rulesIn, mode = 'dry-run
       return;
     }
     const recs = deskRecords(data);
-    let dayRules = { ...rules };
+    const learned = rules.autoLearn ? await getLearned().catch(() => null) : null;
+    const { rules: learnedRules, note } = applyLearned(rules, learned);
+    if (note) say(note);
+    let dayRules = { ...learnedRules };
     let pdtUsed = null;
     if (live) {
       const a = await api.account(accountHash);
