@@ -58,6 +58,7 @@ export function useDataVersion(v) {
   memo.clear();
   scanPromise = null;
   replayPromise = null;
+  congressPromise = null;
   intradayMemo.clear();
 }
 export const lastUpdated = () => dataVersion;
@@ -140,6 +141,17 @@ export function getSmartMoney() {
   });
   smartPromise.catch(() => { smartPromise = null; });
   return smartPromise;
+}
+let congressPromise = null;
+export function getCongress() {
+  congressPromise ??= staticSite.then(async (m) => {
+    const r = await fetch(m ? `data/congress.json?v=${encodeURIComponent(dataVersion || m.updated)}` : 'api/congress');
+    const d = r.ok ? await r.json() : null;
+    if (!d) throw new Error('Congress trade data isn\'t available yet. It appears after the next site update.');
+    return d;
+  });
+  congressPromise.catch(() => { congressPromise = null; });
+  return congressPromise;
 }
 const intradayMemo = new Map();
 export function getIntradayDays(symbol) {

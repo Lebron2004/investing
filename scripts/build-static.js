@@ -17,6 +17,7 @@ import { summarize } from '../public/js/lib/scan.js';
 import { fetchIntradayDays, demoIntradayDays, mergeDays, morningRecords } from '../lib/replay-data.js';
 import { smartMoney } from '../lib/sec.js';
 import { learnSettings } from '../lib/learn.js';
+import { congressTrades, tradedTickers, demoCongress } from '../lib/congress.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const out = `${root}dist/`;
@@ -38,7 +39,17 @@ async function extraSymbols() {
   }
 }
 
-const symbols = [...new Set([...UNIVERSE.map((u) => u.symbol), ...(await extraSymbols())])];
+// Congress trades (House STOCK Act reports). The stocks members trade most get their prices
+// downloaded too, so the Copy Trades page can simulate copying them.
+const congressStarted = Date.now();
+let congress = demoOnly ? null : await congressTrades({ cacheDir: `${root}.cache/congress`, maxPdfs: 250, log: (m) => console.log(m) });
+if (congress) {
+  console.log(`Congress: ${congress.trades.length} stock trades by ${congress.members.length} House members (${congress.pending} reports left to read next run), ${((Date.now() - congressStarted) / 1000).toFixed(1)}s`);
+  for (const e of congress.errors.slice(0, 5)) console.warn(`::warning::Congress: ${e}`);
+}
+const congressSymbols = congress ? tradedTickers(congress, 80).filter((s) => SYMBOL_RE.test(s)) : [];
+
+const symbols = [...new Set([...UNIVERSE.map((u) => u.symbol), ...(await extraSymbols()), ...congressSymbols])];
 
 await rm(out, { recursive: true, force: true });
 await cp(`${root}public/`, out, { recursive: true });
@@ -101,6 +112,10 @@ async function worker() {
 }
 await Promise.all(Array.from({ length: 4 }, worker));
 
+// Demo builds get simulated Congress trades (clearly marked) so the page can be tried offline.
+if (demoOnly) congress = demoCongress([...loaded.keys()].filter((s) => inUniverse.has(s)), (s) => loaded.get(s)?.candles);
+await writeFile(`${out}data/congress.json`, JSON.stringify(congress));
+
 // Summaries need the S&P 500 (SPY) for relative strength, so they're built after every download.
 const benchmark = loaded.get('SPY')?.candles;
 for (const [symbol, data] of loaded) {
@@ -117,8 +132,11 @@ let smart = null;
   } else {
     smart = await smartMoney({ symbols: UNIVERSE.filter((u) => u.sector !== 'ETF').map((u) => u.symbol), cacheDir: `${root}.cache/sec`, log: (m) => console.log(m) });
   }
+  // Congress purchases feed the AutoPilot "Congress has been buying" tip (by filing date: no peeking).
+  smart.congressBuys = {};
+  for (const t of congress?.trades || []) if (t.type === 'buy') (smart.congressBuys[t.ticker] ??= []).push(t.filed);
   const inUni = (obj) => Object.fromEntries(Object.entries(obj).filter(([k]) => inUniverse.has(k)));
-  await writeFile(`${out}data/smartmoney.json`, JSON.stringify({ ...smart, holdings: inUni(smart.holdings), insiderBuys: inUni(smart.insiderBuys) }));
+  await writeFile(`${out}data/smartmoney.json`, JSON.stringify({ ...smart, holdings: inUni(smart.holdings), insiderBuys: inUni(smart.insiderBuys), congressBuys: inUni(smart.congressBuys) }));
   console.log(`Smart money: ${smart.funds.length} funds, insider buying in ${Object.keys(smart.insiders).length} stocks, ${((Date.now() - started) / 1000).toFixed(1)}s`);
   for (const e of smart.errors.slice(0, 8)) console.warn(`::warning::SEC: ${e}`);
 }

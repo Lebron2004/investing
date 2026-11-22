@@ -41,7 +41,14 @@ jobs:
       - name: Run tests
         run: npm test
 
-      # Company fundamentals (refreshed about once a day) and 5-minute bars for AutoPilot are cached between runs.
+      # Reads Congress members' trade-report PDFs (scripts/pdf_text.py).
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install PDF reader
+        run: pip install -r requirements.txt
+
+      # Company fundamentals, 5-minute bars for AutoPilot, SEC filings and Congress reports are cached between runs.
       - uses: actions/cache@v4
         with:
           path: .cache

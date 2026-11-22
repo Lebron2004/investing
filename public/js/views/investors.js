@@ -19,6 +19,7 @@ export async function renderInvestors(app) {
       <h1>Big Investors</h1>
       <p class="lede">What famous investors own, and which company insiders are buying their own stock, straight from their public SEC filings. Updated automatically every day.</p>
     </section>
+    <section class="card copy-promo"><h2>🏛️ Copy Congress trades</h2><p>See every stock trade members of the House report, like Nancy Pelosi, and test copying them with fake money.</p><a class="btn" href="#/copy">Open Copy Trades</a></section>
     <div class="notice small"><strong>Read this first:</strong> funds file what they owned at the end of each quarter, and they have 45 days to do it. So this is a look in the rear-view mirror: they may have sold since. It's a great source of ideas and a vote of confidence, not a buy signal on its own. AutoPilot can use it as a filter, and its <a href="#/autopilot">Train</a> button tests whether that actually helps.</div>
     ${d.errors?.length && !funds.length ? `<div class="notice warn small">The SEC data couldn't be downloaded on the last update: ${esc(d.errors[0])}</div>` : ''}
 

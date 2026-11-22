@@ -63,6 +63,10 @@ npm test
 
 If Yahoo Finance can't be reached, the server falls back to simulated data and the UI shows a "Demo data" warning.
 
+Optional: the Copy Trades page reads Congress members' trade reports, which are PDFs. To load real ones
+on your own computer, install Python 3 and run `pip install -r requirements.txt`. The GitHub Pages build
+does this automatically.
+
 ## How it works
 
 | File | Purpose |

@@ -48,7 +48,7 @@ export async function renderIdeas(app) {
     <section class="page-head">
       <h1>Top Ideas</h1>
       <p class="lede">We scan ${STOCKS.length} large US stocks across all 11 market sectors and rank them. <strong>Short-term</strong> looks for momentum you can trade over days to weeks. <strong>Long-term</strong> looks for steady, durable uptrends worth holding for months or years.</p>
-      <p><a class="btn ghost small-btn" href="#/investors">🏦 See what big investors and insiders are buying →</a></p>
+      <p><a class="btn ghost small-btn" href="#/investors">🏦 See what big investors and insiders are buying →</a> <a class="btn ghost small-btn" href="#/copy">🏛️ Copy Congress trades (Pelosi and others) →</a></p>
     </section>
     <div class="seg big" id="tabs"><button data-tab="short">Short-term buys</button><button data-tab="long">Long-term buys</button></div>
     <p class="muted small tab-explain" id="tab-explain"></p>

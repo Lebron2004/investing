@@ -25,6 +25,8 @@ export const TIPS = [
     idea: 'Pabrai openly "clones" the best investors\' picks. Only stocks owned by at least one of the famous funds StockWise tracks (Berkshire Hathaway, Pershing Square, Duquesne and others), per their latest SEC 13F filing.' },
   { key: 'insider', bit: 128, who: 'Peter Lynch', title: 'Insiders have been buying',
     idea: '"Insiders might sell their shares for any number of reasons, but they buy them for only one: they think the price will rise." Only stocks where an executive or director bought shares on the open market in the last 90 days (SEC Form 4).' },
+  { key: 'congress', bit: 256, who: 'Members of Congress', title: 'Congress has been buying',
+    idea: 'Only stocks a member of the U.S. House disclosed buying in the last 60 days (STOCK Act reports). Members have up to 45 days to report, so this is always late. Train shows whether it has helped anyway.' },
   { key: 'noGap', bit: 0, who: 'Common day-trading rule', title: 'Skip big opening gaps',
     idea: 'A stock that opens more than 4% away from yesterday\'s close has already made much of its move. Gaps are often faded. Skip it for the day.' },
 ];
@@ -92,6 +94,8 @@ export function smartBits(smart, symbol, day) {
   if (holders?.some(([filed, until]) => filed < day && (!until || day <= until))) bits |= 64;
   const buys = smart.insiderBuys?.[symbol];
   if (buys?.some((filed) => filed < day && daysBetween(filed, day) <= 90)) bits |= 128;
+  const congress = smart.congressBuys?.[symbol];
+  if (congress?.some((filed) => filed < day && daysBetween(filed, day) <= 60)) bits |= 256;
   return bits;
 }
 const daysBetween = (a, b) => (Date.parse(b) - Date.parse(a)) / 864e5;

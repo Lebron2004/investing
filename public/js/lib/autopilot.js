@@ -509,7 +509,7 @@ export const TUNE_GRID = {
   marketFilter: [true, false],
 };
 
-const TIPS_FOR_TUNE = ['above200', 'trend', 'leader', 'market', 'nearHigh', 'nr7', 'funds', 'insider', 'noGap'];
+const TIPS_FOR_TUNE = ['above200', 'trend', 'leader', 'market', 'nearHigh', 'nr7', 'funds', 'insider', 'congress', 'noGap'];
 
 export function tune(rulesIn, days, { minTrades = 6 } = {}) {
   const base = normalizeRules(rulesIn);

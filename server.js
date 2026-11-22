@@ -17,6 +17,7 @@ import { summarize } from './public/js/lib/scan.js';
 import { fetchIntradayDays, demoIntradayDays, mergeDays, morningRecords } from './lib/replay-data.js';
 import { smartMoney } from './lib/sec.js';
 import { learnSettings } from './lib/learn.js';
+import { congressTrades, demoCongress } from './lib/congress.js';
 
 const PORT = Number(process.env.PORT) || 3000;
 const DEMO_ONLY = process.env.DATA_SOURCE === 'demo';
@@ -206,6 +207,14 @@ async function handleApi(url, res) {
   if (p === '/api/status') return send(res, 200, { updated: new Date(Math.floor(Date.now() / CACHE_MS) * CACHE_MS).toISOString() });
   if (p === '/api/universe') return send(res, 200, { results: UNIVERSE });
   if (p === '/api/daytrade') return send(res, 200, await cached('desk', dayTradeDesk, 60e3));
+  if (p === '/api/congress') {
+    if (DEMO_ONLY) {
+      const syms = UNIVERSE.filter((u) => u.sector !== 'ETF').map((u) => u.symbol);
+      const loaded = new Map(await Promise.all(syms.map(async (s) => [s, (await history(s).catch(() => null))?.candles])));
+      return send(res, 200, await cached('congress', async () => demoCongress(syms, (s) => loaded.get(s)), 3600e3));
+    }
+    return send(res, 200, await cached('congress', () => congressTrades({ cacheDir: fileURLToPath(new URL('./.cache/congress', import.meta.url)), maxPdfs: 100 }), 6 * 3600e3));
+  }
   if (p === '/api/smartmoney') return send(res, 200, await getSmart());
   if (p === '/api/learned') {
     const r = await cached('replay', replayData, 30 * 60e3);

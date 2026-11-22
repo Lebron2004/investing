@@ -158,8 +158,8 @@ test('replay and tune run end to end on simulated days', () => {
   assert.ok(account.trades.every((t) => t.shares * t.entry <= 100.01));
   assert.ok(account.days.every((d) => d.pl >= -5.5), 'no day loses much more than the limit');
   const t = tune(rules(), days, { minTrades: 1 });
-  assert.equal(t.tried, 45, '36 setting combos + 9 investor tips');
-  assert.equal(t.tips.length, 9);
+  assert.equal(t.tried, 46, '36 setting combos + 10 investor tips');
+  assert.equal(t.tips.length, 10);
   assert.ok(t.tips.every((x) => typeof x.test.totalR === 'number'));
   assert.equal(t.trainDays.length + t.testDays.length, 16);
   assert.ok(t.best.settings && typeof t.best.test.totalR === 'number');
