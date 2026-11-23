@@ -1,3 +1,5 @@
+import { getSmartMoney, getCongress } from '../api.js';
+import { thesis } from '../lib/thesis.js';
 import { getScan, settings, money, pct, shares, toneOf, esc, badge, scoreBar, demoNotice, gradeChips } from '../api.js';
 import { SECTORS, STOCKS } from '../lib/universe.js';
 import { positionSize, RISK_PROFILES } from '../lib/sizing.js';
@@ -54,7 +56,7 @@ export async function renderIdeas(app) {
     <p class="muted small tab-explain" id="tab-explain"></p>
     <div id="ideas-body"><div class="loading">Scanning the market…</div></div>`;
 
-  const items = await getScan();
+  const [items, smart, congress] = await Promise.all([getScan(), getSmartMoney().catch(() => null), getCongress().catch(() => null)]);
   const stocks = items.filter((i) => i.sector !== 'ETF');
   const bySym = Object.fromEntries(items.map((i) => [i.symbol, i]));
   const body = app.querySelector('#ideas-body');
@@ -83,6 +85,7 @@ export async function renderIdeas(app) {
     const ranked = [...inView].sort((a, b) => b.analysis[key].score - a.analysis[key].score);
     const top = ranked.filter((x) => x.analysis[key].score >= 58).slice(0, 6);
     const sel = sectors.find((x) => x.name === state.sector);
+    const sectorRank = Object.fromEntries(sectors.map((x, i) => [x.name, { rank: i + 1, of: sectors.length, score: x.score }]));
 
     const tabCols = COLUMNS[state.tab];
     const col = tabCols.find((c) => c.key === state.sort) || tabCols.at(-1);
@@ -131,7 +134,7 @@ export async function renderIdeas(app) {
       </section>` : ''}
 
       <h2 class="section-title">Top ${state.tab === 'short' ? 'short-term' : 'long-term'} buys${sel ? ` in ${esc(sel.name)}` : ''}${state.tab === 'short' && state.setup !== 'all' ? ` · ${esc(SETUPS.find(([k]) => k === state.setup)[1])} setups` : ''}</h2>
-      ${top.length ? `<div class="ideas-grid">${top.map((d) => card(d, key, s, profile)).join('')}</div>`
+      ${top.length ? `<div class="ideas-grid">${top.map((d) => card(d, key, s, profile, { sectorRank: sectorRank[d.sector], smart, congress })).join('')}</div>`
         : `<div class="card"><p>Nothing ${sel ? 'in this sector ' : ''}${state.tab === 'short' && state.setup !== 'all' ? 'with this setup ' : ''}scores a Buy right now. That's a signal too: when nothing qualifies, holding cash or broad index funds is often the best move.</p></div>`}
 
       <section class="card">
@@ -182,7 +185,7 @@ export async function renderIdeas(app) {
   draw();
 }
 
-function card(d, key, s, profile) {
+function card(d, key, s, profile, ctx) {
   const a = d.analysis, r = a[key];
   let detail, sizing;
   if (key === 'shortTerm') {
@@ -204,13 +207,21 @@ function card(d, key, s, profile) {
     const start = sh > 0 ? `<span>Start with <strong>${shares(sh)}</strong> sh now</span>` : `<span class="muted">1 share is over your first-stage budget (${money(budget * 0.4, 0)}). Turn on fractional shares or wait</span>`;
     sizing = `<div class="idea-plan">${start}<span>Add near <strong>${money(a.ltPlan.tranches[1].price)}</strong></span><span>1y <strong class="${toneOf(r.oneYear)}">${pct(r.oneYear, 0, true)}</strong></span></div>`;
   }
-  const best = r.reasons.filter((x) => x.points > 0).sort((p, q) => q.points - p.points).slice(0, 3);
-  return `<a class="idea card" href="#/stock/${encodeURIComponent(d.symbol)}">
-    <div class="idea-top"><div><strong class="sym">${esc(d.symbol)}</strong> <span class="muted">${esc(d.name)}</span><div class="sub muted">${esc(d.sector)}</div></div>${badge(r)}</div>
+  const t = thesis(d, key, ctx);
+  const href = `#/stock/${encodeURIComponent(d.symbol)}`;
+  return `<article class="idea card">
+    <div class="idea-top"><div><a class="sym" href="${href}">${esc(d.symbol)}</a> <span class="muted">${esc(d.name)}</span><div class="sub muted">${esc(d.sector)}</div></div>${badge(r)}</div>
     <div class="idea-price">${money(a.price)} <span class="${toneOf(a.changePct)}">${pct(a.changePct, 2, true)}</span></div>
     <div class="score-row">${scoreBar(r.score)}</div>
     ${detail}
-    <ul class="mini-reasons">${best.map((x) => `<li>${esc(x.text)}</li>`).join('')}</ul>
+    <p class="idea-headline">${esc(t.headline)}</p>
+    <div class="idea-why"><h4>Why</h4><ul>${t.why.map((x) => `<li>${x}</li>`).join('')}</ul></div>
+    <details class="idea-more"><summary>Risks, how to play it, and when it's wrong</summary>
+      <h4>What could go wrong</h4><ul class="risks">${t.risks.map((x) => `<li>${x}</li>`).join('')}</ul>
+      <h4>How to play it</h4><ul>${t.plan.map((x) => `<li>${x}</li>`).join('')}</ul>
+      <h4>It's wrong if…</h4><p>${esc(t.wrongIf)}</p>
+    </details>
     ${sizing}
-  </a>`;
+    <a class="small idea-link" href="${href}">Full analysis and chart →</a>
+  </article>`;
 }

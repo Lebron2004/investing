@@ -791,3 +791,15 @@ body.compact-mode .container { padding: 10px 10px 20px; }
 .member-tools label { display: flex; flex-direction: column; gap: 3px; font-size: .85rem; }
 .member-tools label.check { flex-direction: row; align-items: center; }
 .cluster-pick { margin-bottom: 8px; }
+/* Idea reasoning */
+.idea:hover { transform: none; }
+.idea .sym { color: var(--text); font-weight: 700; }
+.idea-headline { font-weight: 600; margin: 8px 0 4px; font-size: .95rem; }
+.idea-why h4, .idea-more h4 { margin: 8px 0 4px; font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.idea-why ul, .idea-more ul { padding-left: 18px; margin: 0 0 8px; font-size: .86rem; }
+.idea-why li, .idea-more li { margin-bottom: 4px; }
+.idea-more { margin-bottom: 10px; font-size: .86rem; }
+.idea-more summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+.idea-more .risks li::marker { color: var(--down); }
+.idea-more p { margin: 0 0 6px; }
+.idea-link { margin-top: 8px; }
