@@ -14,6 +14,7 @@ export async function renderAutopilot(app) {
   app.innerHTML = `
     <section class="page-head">
       <h1>AutoPilot <span class="badge flat">Paper money</span></h1>
+      <p><a class="btn ghost small-btn" href="#/crypto">🪙 Crypto AutoPilot (24/7) →</a></p>
       <p class="lede">A day-trading bot that follows <strong>your</strong> rules: how much money it may use today, how much it may lose, which markets it may trade and when. It trades a practice account with fake money, so you can watch how it behaves, test it on past days and train it before you trust any of its ideas with real money.</p>
     </section>
     <div class="notice small"><strong>Paper only.</strong> AutoPilot never touches your real brokerage account: StockWise can't log in to Schwab or place orders there. If you like what it does, you can copy any of its setups into your own account with the <a href="#/order">Order Helper</a>, and you press the button yourself.</div>

@@ -15,6 +15,8 @@ import { renderOrderHelper } from './views/orders.js';
 import { renderAutopilot } from './views/autopilot.js';
 import { renderInvestors } from './views/investors.js';
 import { renderCopy } from './views/copy.js';
+import { renderCrypto } from './views/crypto.js';
+import { initCrypto } from './cryptorunner.js';
 import { initBot } from './bot.js';
 import { registerServiceWorker } from './install.js';
 import { renderAcademy, renderLesson } from './views/academy.js';
@@ -41,6 +43,7 @@ const routes = [
   [/^\/autopilot$/, 'autopilot', () => renderAutopilot(app)],
   [/^\/investors$/, 'ideas', () => renderInvestors(app)],
   [/^\/copy$/, 'ideas', () => renderCopy(app)],
+  [/^\/crypto$/, 'autopilot', () => renderCrypto(app)],
   [/^\/tools$/, 'tools', (m, q) => renderTools(app, q)],
   [/^\/class$/, 'academy', (m, q) => renderClass(app, q)],
   [/^\/academy$/, 'academy', () => renderAcademy(app)],
@@ -149,7 +152,7 @@ pill.addEventListener('click', () => {
 });
 
 // Pages that keep themselves up to date (and hold results you'd lose on a re-render).
-const SELF_UPDATING = /^#\/(autopilot)\b/;
+const SELF_UPDATING = /^#\/(autopilot|crypto)\b/;
 
 async function tick() {
   if (SELF_UPDATING.test(location.hash)) return;
@@ -169,3 +172,4 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) tick
 staticSite.then(showStatus);
 registerServiceWorker();
 initBot(); // AutoPilot keeps paper trading while any StockWise page is open
+initCrypto(); // so does Crypto AutoPilot (24/7)
