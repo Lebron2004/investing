@@ -1,15 +1,33 @@
 import { getCongress, getHistory, store, money, pct, esc, toneOf } from '../api.js';
-import { copyPortfolio, memberSummary, lagDays, AMOUNT_LABEL } from '../lib/copytrade.js';
+import { copyPortfolio, memberSummary, lagDays, AMOUNT_LABEL, clusterBuys } from '../lib/copytrade.js';
 
 const TYPE = { buy: ['BUY', 'up'], sell: ['SELL', 'down'], partial: ['SOLD SOME', 'down'], exchange: ['EXCHANGE', ''] };
 const fmtDate = (d) => (d ? new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—');
 const daysAgo = (n) => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
-const loadPrefs = () => ({ members: [], budget: 1000, slicePct: 0.1, period: 365, ...store.get('copyPrefs', {}) });
+const loadPrefs = () => ({ members: [], budget: 1000, slicePct: 0.1, period: 365, maxLag: '', sort: 'trades', fastOnly: false, ...store.get('copyPrefs', {}) });
+const CLUSTER = 'Cluster buys (2+ members)';
+const FAST_DAYS = 15;
+
+// "Cluster buys" as a member you can copy: buy when a second member reports buying the same stock
+// within 30 days; sell when any of those members reports selling it.
+function clusterTrades(trades) {
+  const out = [];
+  for (const c of clusterBuys(trades)) {
+    out.push({ member: CLUSTER, ticker: c.ticker, type: 'buy', filed: c.filed, txDate: c.txFirst, lo: 0, hi: null, owner: 'self', asset: c.ticker });
+    const sell = trades.filter((t) => t.ticker === c.ticker && c.members.includes(t.member) && (t.type === 'sell' || t.type === 'partial') && t.filed > c.filed)
+      .sort((a, b) => a.filed.localeCompare(b.filed))[0];
+    if (sell) out.push({ ...sell, member: CLUSTER, type: 'sell' });
+  }
+  return out;
+}
+const fmtEx = (v) => (v == null ? '—' : `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(1)}%`);
 
 export async function renderCopy(app) {
   app.innerHTML = '<div class="loading">Loading Congress trades…</div>';
   const data = await getCongress();
-  const members = memberSummary(data.trades);
+  const scoreOf = Object.fromEntries((data.members || []).map((m) => [m.name, m.score]));
+  const members = memberSummary(data.trades).map((m) => ({ ...m, score: scoreOf[m.name] ?? null }));
+  const allTrades = [...data.trades, ...clusterTrades(data.trades)];
   const prefs = loadPrefs();
   if (!prefs.members.length) {
     const pelosi = members.find((m) => /Pelosi/.test(m.name));
@@ -29,6 +47,12 @@ export async function renderCopy(app) {
       <section class="card">
         <h2>1. Who to copy</h2>
         <input id="member-search" type="search" placeholder="Search a member, e.g. Pelosi" aria-label="Search members">
+        <div class="member-tools">
+          <label>Sort<select id="member-sort">${[['trades', 'Most trades'], ['record', 'Best track record'], ['fast', 'Reports fastest']].map(([v, l]) => `<option value="${v}" ${prefs.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+          <label class="check"><input type="checkbox" id="fast-only" ${prefs.fastOnly ? 'checked' : ''}> Fast reporters only (usually within ${FAST_DAYS} days)</label>
+        </div>
+        <label class="member cluster-pick ${prefs.members.includes(CLUSTER) ? 'on' : ''}"><input type="checkbox" value="${CLUSTER}" ${prefs.members.includes(CLUSTER) ? 'checked' : ''}>
+          <span><strong>🤝 ${CLUSTER}</strong><span class="small muted">Buys a stock once two or more members have reported buying it within 30 days.${data.clusterScore?.n30 ? ` Past clusters: ${fmtEx(data.clusterScore.avg30)} vs the S&amp;P 500 after 30 trading days on average (${data.clusterScore.n30} clusters).` : ''}</span></span></label>
         <div class="member-list" id="member-list"></div>
         <p class="small muted">House members only, from ${data.members?.length || members.length} who reported trades in the last ~13 months. Senate reports sit behind a separate legal agreement and aren't included yet.</p>
       </section>
@@ -36,6 +60,7 @@ export async function renderCopy(app) {
         <h2>2. Your copy portfolio</h2>
         <label>Starting money (fake)<div class="input-prefix"><span>$</span><input name="budget" type="number" min="50" step="any" value="${prefs.budget}"></div></label>
         <label>Each new buy uses<select name="slicePct">${[[0.05, '5% of starting money'], [0.1, '10% of starting money'], [0.2, '20% of starting money']].map(([v, l]) => `<option value="${v}" ${prefs.slicePct === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <label>Only copy buys reported within<select name="maxLag">${[['', 'any delay'], [7, '7 days'], [15, '15 days'], [30, '30 days']].map(([v, l]) => `<option value="${v}" ${String(prefs.maxLag) === String(v) ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
         <label>Look back<select name="period">${[[90, '3 months'], [182, '6 months'], [365, '12 months']].map(([v, l]) => `<option value="${v}" ${prefs.period === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
         <p class="small muted">Buys copy their purchases. When they sell, the portfolio sells (half, for a partial sale). Uses fractional shares so small amounts work.</p>
         <button class="btn" type="submit">▶ Show how copying would have done</button>
@@ -43,6 +68,7 @@ export async function renderCopy(app) {
     </div>
     <section class="card" id="copy-follow"></section>
     <div id="copy-out"></div>
+    ${clusterCard(data)}
     <section class="card">
       <h2>Latest trades reported</h2>
       <div id="feed"></div>
@@ -56,11 +82,17 @@ export async function renderCopy(app) {
 
   const drawMembers = () => {
     const q = app.querySelector('#member-search').value.trim().toLowerCase();
-    const shown = members.filter((m) => !q || m.name.toLowerCase().includes(q)).slice(0, q ? 40 : 14);
+    const sort = app.querySelector('#member-sort').value;
+    const fastOnly = app.querySelector('#fast-only').checked;
+    const recordOf = (m) => (m.score?.n30 >= 5 ? m.score.avg30 : -Infinity);
+    const sorted = [...members].sort(sort === 'record' ? (a, b) => recordOf(b) - recordOf(a) || b.trades - a.trades
+      : sort === 'fast' ? (a, b) => (a.avgLag ?? 999) - (b.avgLag ?? 999) || b.trades - a.trades : (a, b) => b.trades - a.trades);
+    const shown = sorted.filter((m) => (!q || m.name.toLowerCase().includes(q)) && (!fastOnly || (m.avgLag != null && m.avgLag <= FAST_DAYS))).slice(0, q ? 40 : 14);
     list.innerHTML = shown.map((m) => `<label class="member ${selected.has(m.name) ? 'on' : ''}">
       <input type="checkbox" value="${esc(m.name)}" ${selected.has(m.name) ? 'checked' : ''}>
       <span><strong>${esc(m.name)}</strong> <span class="muted small">${esc(m.state)}</span>
       <span class="small muted">${m.trades} trades (${m.buys} buys, ${m.sells} sells)${m.avgLag != null ? ` · reports ~${m.avgLag} days late` : ''}</span>
+      ${scoreLine(m.score)}
       <span class="small">${m.top.map(esc).join(' · ')}</span></span></label>`).join('') || '<p class="muted">No member found.</p>';
   };
   const drawFeed = () => {
@@ -74,6 +106,14 @@ export async function renderCopy(app) {
     </tbody></table></div>` : '<p class="muted">No trades for the selected members.</p>';
   };
 
+  const savePicker = () => store.set('copyPrefs', { ...loadPrefs(), sort: app.querySelector('#member-sort').value, fastOnly: app.querySelector('#fast-only').checked });
+  app.querySelector('#member-sort').addEventListener('change', () => { savePicker(); drawMembers(); });
+  app.querySelector('#fast-only').addEventListener('change', () => { savePicker(); drawMembers(); });
+  app.querySelector('.cluster-pick input').addEventListener('change', (e) => {
+    e.target.checked ? selected.add(CLUSTER) : selected.delete(CLUSTER);
+    e.target.closest('.member').classList.toggle('on', e.target.checked);
+    store.set('copyPrefs', { ...loadPrefs(), members: [...selected] });
+  });
   list.addEventListener('change', (e) => {
     if (e.target.type !== 'checkbox') return;
     e.target.checked ? selected.add(e.target.value) : selected.delete(e.target.value);
@@ -97,7 +137,7 @@ export async function renderCopy(app) {
     }));
   };
   const simulate = async (opts) => {
-    const trades = data.trades.filter((t) => opts.members.includes(t.member));
+    const trades = allTrades.filter((t) => opts.members.includes(t.member));
     await loadPrices(trades.map((t) => t.ticker), (n) => { out.innerHTML = `<p class="loading">Loading prices… ${n}</p>`; });
     const base = { ...opts, bench: candleCache.get('SPY') };
     return {
@@ -107,7 +147,7 @@ export async function renderCopy(app) {
   };
   const readForm = () => {
     const f = new FormData(form);
-    return { members: [...selected], budget: Math.max(50, Number(f.get('budget')) || 1000), slicePct: Number(f.get('slicePct')) || 0.1, period: Number(f.get('period')) || 365 };
+    return { ...loadPrefs(), members: [...selected], budget: Math.max(50, Number(f.get('budget')) || 1000), slicePct: Number(f.get('slicePct')) || 0.1, period: Number(f.get('period')) || 365, maxLag: f.get('maxLag') || '' };
   };
 
   form.addEventListener('submit', async (e) => {
@@ -116,13 +156,13 @@ export async function renderCopy(app) {
     store.set('copyPrefs', p);
     if (!p.members.length) { out.innerHTML = '<div class="card"><p class="muted">Pick at least one member to copy.</p></div>'; return; }
     out.innerHTML = '<p class="loading">Simulating…</p>';
-    const res = await simulate({ members: p.members, budget: p.budget, slicePct: p.slicePct, start: daysAgo(p.period) });
+    const res = await simulate({ members: p.members, budget: p.budget, slicePct: p.slicePct, start: daysAgo(p.period), maxLag: p.maxLag ? Number(p.maxLag) : null });
     out.innerHTML = resultCard(`If you had copied ${listNames(p.members)} for the last ${p.period >= 365 ? '12 months' : `${Math.round(p.period / 30)} months`}`, res, p, { canFollow: true });
   });
   out.addEventListener('click', (e) => {
     if (!e.target.closest('[data-follow]')) return;
     const p = readForm();
-    follow = { members: p.members, budget: p.budget, slicePct: p.slicePct, since: new Date().toISOString().slice(0, 10) };
+    follow = { members: p.members, budget: p.budget, slicePct: p.slicePct, maxLag: p.maxLag ? Number(p.maxLag) : null, since: new Date().toISOString().slice(0, 10) };
     store.set('copyFollow', follow);
     drawFollow();
     app.querySelector('#copy-follow').scrollIntoView({ behavior: 'smooth' });
@@ -135,7 +175,7 @@ export async function renderCopy(app) {
       return;
     }
     followEl.innerHTML = '<p class="loading">Updating your copy portfolio…</p>';
-    const res = await simulate({ members: follow.members, budget: follow.budget, slicePct: follow.slicePct, start: follow.since });
+    const res = await simulate({ members: follow.members, budget: follow.budget, slicePct: follow.slicePct, start: follow.since, maxLag: follow.maxLag ?? null });
     followEl.innerHTML = `${resultCard(`Your copy portfolio: following ${listNames(follow.members)} since ${fmtDate(follow.since)}`, res, follow, { live: true })}
       <button class="btn ghost small-btn" type="button" data-unfollow>Stop following</button>`;
   };
@@ -146,6 +186,24 @@ export async function renderCopy(app) {
   drawMembers();
   drawFeed();
   drawFollow();
+}
+
+function scoreLine(sc) {
+  if (!sc?.n30) return '<span class="small muted">Track record: not enough buys with prices yet</span>';
+  const thin = sc.n30 < 5 ? ' <em>(few trades: mostly luck)</em>' : '';
+  return `<span class="small">Track record: buys did <strong class="${toneOf(sc.avg30)}">${fmtEx(sc.avg30)}</strong> vs the S&amp;P 500 in the 30 trading days after being reported, beating it ${pct(sc.hit30, 0)} of the time (${sc.n30} buys)${thin}</span>`;
+}
+
+function clusterCard(data) {
+  const cl = data.clusters || [];
+  const all = data.allScore, cs = data.clusterScore;
+  return `<section class="card">
+    <h2>🤝 Cluster buys <span class="muted small">2+ members bought the same stock within 30 days</span></h2>
+    <p class="small muted">One member's trade can mean anything. Several buying the same stock is a stronger hint.${cs?.n30 && all?.n30 ? ` So far, after the second report was filed, cluster buys did <strong class="${toneOf(cs.avg30)}">${fmtEx(cs.avg30)}</strong> vs the S&amp;P 500 over 30 trading days (${cs.n30} clusters), compared with <strong class="${toneOf(all.avg30)}">${fmtEx(all.avg30)}</strong> for all Congress buys (${all.n30}). Small samples swing a lot.` : ''}</p>
+    ${cl.length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>Stock</th><th>Members</th><th class="num">Known since</th><th class="num">30 days later vs S&amp;P</th></tr></thead><tbody>
+      ${cl.slice(0, 15).map((c) => `<tr><td><a href="#/stock/${encodeURIComponent(c.ticker)}"><strong>${esc(c.ticker)}</strong></a><div class="sub">${c.trades} buys</div></td><td>${c.members.map(esc).join(', ')}</td><td class="num">${fmtDate(c.filed)}</td><td class="num ${toneOf(c.ex30)}">${c.ex30 == null ? '<span class="muted">too recent</span>' : fmtEx(c.ex30)}</td></tr>`).join('')}
+    </tbody></table></div>` : '<p class="muted">No cluster buys found yet. More appear as more reports are read.</p>'}
+  </section>`;
 }
 
 const listNames = (names) => (names.length <= 2 ? names.map(esc).join(' and ') : `${esc(names[0])} and ${names.length - 1} others`);

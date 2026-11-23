@@ -18,6 +18,7 @@ import { fetchIntradayDays, demoIntradayDays, mergeDays, morningRecords } from '
 import { smartMoney } from '../lib/sec.js';
 import { learnSettings } from '../lib/learn.js';
 import { congressTrades, tradedTickers, demoCongress } from '../lib/congress.js';
+import { buyOutcomes, scorecards, clusterBuys } from '../public/js/lib/copytrade.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const out = `${root}dist/`;
@@ -114,6 +115,24 @@ await Promise.all(Array.from({ length: 4 }, worker));
 
 // Demo builds get simulated Congress trades (clearly marked) so the page can be tried offline.
 if (demoOnly) congress = demoCongress([...loaded.keys()].filter((s) => inUniverse.has(s)), (s) => loaded.get(s)?.candles);
+// Track records: how each member's buys did after they were reported, and "cluster buys" where
+// several members bought the same stock. Computed here because every price is already loaded.
+if (congress?.trades?.length) {
+  const candlesOf = (sym) => loaded.get(sym)?.candles;
+  const spy = loaded.get('SPY')?.candles;
+  const outcomes = buyOutcomes(congress.trades, candlesOf, spy);
+  const cards = scorecards(outcomes);
+  for (const m of congress.members) m.score = cards[m.name] ?? null;
+  const clusters = clusterBuys(congress.trades);
+  const clusterOut = buyOutcomes(clusters.map((c) => ({ member: '(cluster)', ticker: c.ticker, filed: c.filed, txDate: c.txFirst, type: 'buy' })), candlesOf, spy);
+  congress.clusters = clusters.slice(0, 60).map((c) => {
+    const o = clusterOut.find((x) => x.ticker === c.ticker && x.filed === c.filed);
+    return { ...c, ret30: o?.ret30 ?? null, ex30: o?.ex30 ?? null, ret90: o?.ret90 ?? null, ex90: o?.ex90 ?? null };
+  });
+  congress.clusterScore = scorecards(clusterOut.map((o) => ({ ...o, member: 'clusters' }))).clusters ?? null;
+  congress.allScore = scorecards(outcomes.map((o) => ({ ...o, member: 'all' }))).all ?? null;
+  console.log(`Congress track records: ${outcomes.length} buys scored, ${clusters.length} cluster buys`);
+}
 await writeFile(`${out}data/congress.json`, JSON.stringify(congress));
 
 // Summaries need the S&P 500 (SPY) for relative strength, so they're built after every download.

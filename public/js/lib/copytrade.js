@@ -18,11 +18,13 @@ const short = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(n % 1e6 ? 1 : 0)}M` : n >=
  * Options: members (names; empty = everyone), start/end ('YYYY-MM-DD'), budget, slicePct (share of the
  * starting budget per new buy), when: 'filed' (realistic) | 'traded' (hindsight), bench: SPY candles.
  */
-export function copyPortfolio(trades, candlesOf, { members = [], start, end = null, budget = 1000, slicePct = 0.1, when = 'filed', bench = null } = {}) {
+export function copyPortfolio(trades, candlesOf, { members = [], start, end = null, budget = 1000, slicePct = 0.1, when = 'filed', bench = null, maxLag = null } = {}) {
   const pick = new Set(members);
   const dateOf = (t) => (when === 'traded' ? t.txDate : t.filed);
+  // maxLag: only copy buys reported within that many days (sells are always followed).
+  const tooLate = (t) => maxLag != null && t.type === 'buy' && (lagDays(t.txDate, t.filed) ?? Infinity) > maxLag;
   const events = trades
-    .filter((t) => (!pick.size || pick.has(t.member)) && ['buy', 'sell', 'partial'].includes(t.type) && t.ticker)
+    .filter((t) => (!pick.size || pick.has(t.member)) && ['buy', 'sell', 'partial'].includes(t.type) && t.ticker && !tooLate(t))
     .filter((t) => dateOf(t) >= start && (!end || dateOf(t) <= end))
     .sort((a, b) => dateOf(a).localeCompare(dateOf(b)) || (a.type === 'buy') - (b.type === 'buy'));
 
@@ -146,3 +148,86 @@ export function memberSummary(trades) {
     avgLag: x.lags.length ? Math.round(x.lags.reduce((a, b) => a + b, 0) / x.lags.length) : null,
   })).sort((a, b) => b.trades - a.trades);
 }
+
+// --- Track records -------------------------------------------------------------------------
+// How did a stock do after a trade was REPORTED (the part you can actually copy)? For each buy:
+// enter at the next trading day's open after the filing, then measure the return after 30 and
+// 90 trading days, minus the S&P 500's return over the same days ("excess").
+export const HORIZONS = [30, 90];
+
+export function buyOutcomes(trades, candlesOf, bench) {
+  const bIdx = bench ? new Map(bench.map((c, i) => [dayOf(c.t), i])) : null;
+  const cache = new Map();
+  const daysOf = (sym) => {
+    if (!cache.has(sym)) { const c = candlesOf(sym); cache.set(sym, c?.length ? { c, days: c.map((x) => dayOf(x.t)) } : null); }
+    return cache.get(sym);
+  };
+  const out = [];
+  for (const t of trades) {
+    if (t.type !== 'buy' || !t.ticker) continue;
+    const s = daysOf(t.ticker);
+    if (!s) continue;
+    const i = s.days.findIndex((d) => d > t.filed);
+    if (i < 0) continue;
+    const entry = s.c[i].open || s.c[i].close;
+    const bi = bIdx?.get(s.days[i]);
+    const r = { member: t.member, ticker: t.ticker, filed: t.filed, day: s.days[i], lag: lagDays(t.txDate, t.filed) };
+    for (const h of HORIZONS) {
+      const j = i + h;
+      if (j >= s.c.length) { r[`ret${h}`] = null; continue; }
+      r[`ret${h}`] = s.c[j].close / entry - 1;
+      const bench0 = bi != null ? bench[bi].open || bench[bi].close : null;
+      const bench1 = bi != null && bench[bi + h] ? bench[bi + h].close : null;
+      r[`ex${h}`] = bench0 && bench1 ? r[`ret${h}`] - (bench1 / bench0 - 1) : null;
+    }
+    out.push(r);
+  }
+  return out;
+}
+
+// One scorecard per member from buyOutcomes(): average excess return and how often they beat the S&P.
+export function scorecards(outcomes) {
+  const by = {};
+  for (const o of outcomes) (by[o.member] ??= []).push(o);
+  return Object.fromEntries(Object.entries(by).map(([member, list]) => {
+    const card = { buys: list.length };
+    for (const h of HORIZONS) {
+      const xs = list.map((o) => o[`ex${h}`]).filter((v) => v != null);
+      card[`n${h}`] = xs.length;
+      card[`avg${h}`] = xs.length ? round4(xs.reduce((a, b) => a + b, 0) / xs.length) : null;
+      card[`hit${h}`] = xs.length ? round4(xs.filter((v) => v > 0).length / xs.length) : null;
+    }
+    return [member, card];
+  }));
+}
+const round4 = (n) => Math.round(n * 1e4) / 1e4;
+
+// Cluster buys: two or more different members reporting buys of the same stock within `windowDays`.
+// The cluster counts from the day the second member's report was filed (when you could know).
+export function clusterBuys(trades, { windowDays = 30, minMembers = 2 } = {}) {
+  const buys = trades.filter((t) => t.type === 'buy' && t.ticker).sort((a, b) => a.filed.localeCompare(b.filed));
+  const byTicker = {};
+  for (const t of buys) (byTicker[t.ticker] ??= []).push(t);
+  const clusters = [];
+  for (const [ticker, list] of Object.entries(byTicker)) {
+    let i = 0;
+    while (i < list.length) {
+      const members = new Map();
+      let j = i, trigger = null;
+      while (j < list.length && (Date.parse(list[j].filed) - Date.parse(list[i].filed)) / 864e5 <= windowDays) {
+        if (!members.has(list[j].member)) members.set(list[j].member, list[j]);
+        if (!trigger && members.size >= minMembers) trigger = list[j].filed;
+        j++;
+      }
+      if (trigger) {
+        const ms = [...members.values()];
+        clusters.push({ ticker, members: ms.map((t) => t.member), trades: j - i, first: list[i].filed, filed: trigger, last: list[j - 1].filed, txFirst: ms.map((t) => t.txDate).sort()[0] });
+        i = j; // next cluster starts after this window
+      } else i++;
+    }
+  }
+  return clusters.sort((a, b) => b.filed.localeCompare(a.filed));
+}
+
+// Members who usually report quickly (average delay in days), for "copy fast reporters only".
+export const isFastReporter = (member, maxLag) => member.avgLag != null && member.avgLag <= maxLag;

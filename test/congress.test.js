@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { deflateRawSync } from 'node:zlib';
 import { parseReport, parseIndex, unzip, tradedTickers } from '../lib/congress.js';
-import { copyPortfolio, memberSummary } from '../public/js/lib/copytrade.js';
+import { copyPortfolio, memberSummary, buyOutcomes, scorecards, clusterBuys } from '../public/js/lib/copytrade.js';
 import { smartBits } from '../public/js/lib/playbook.js';
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
@@ -87,4 +87,42 @@ test('the Congress tip only counts purchases already reported', () => {
   assert.equal(smartBits(smart, 'NVDA', '2026-10-01'), 0);
   assert.equal(smartBits(smart, 'NVDA', '2026-10-15'), 256);
   assert.equal(smartBits(smart, 'NVDA', '2026-12-15'), 0, 'older than 60 days');
+});
+
+test('track records measure from the report, not the trade, and beat-the-index rate', () => {
+  const up = candles(Array.from({ length: 140 }, (_, i) => 10 + i * 0.1)); // rises steadily
+  const flat = candles(Array.from({ length: 140 }, () => 100));
+  const trades = [
+    { member: 'A', ticker: 'UP', type: 'buy', txDate: '2026-01-05', filed: '2026-01-20' },
+    { member: 'A', ticker: 'UP', type: 'sell', txDate: '2026-02-05', filed: '2026-02-10' },
+    { member: 'B', ticker: 'NOPE', type: 'buy', txDate: '2026-01-05', filed: '2026-01-06' },
+  ];
+  const o = buyOutcomes(trades, (s) => ({ UP: up }[s] ?? null), flat);
+  assert.equal(o.length, 1, 'sells and stocks without prices are not scored');
+  assert.equal(o[0].day, '2026-01-21');
+  assert.ok(o[0].ex30 > 0 && Math.abs(o[0].ex30 - o[0].ret30) < 1e-12, 'flat index: excess = return');
+  const sc = scorecards(o);
+  assert.deepEqual([sc.A.n30, sc.A.hit30, sc.A.n90], [1, 1, 1]);
+});
+
+test('cluster buys need two different members within 30 days, counted from the second report', () => {
+  const t = (member, ticker, filed, type = 'buy') => ({ member, ticker, type, filed, txDate: filed });
+  const c = clusterBuys([
+    t('A', 'NVDA', '2026-10-01'), t('A', 'NVDA', '2026-10-05'), t('B', 'NVDA', '2026-10-20'),
+    t('A', 'TSM', '2026-10-01'), t('B', 'TSM', '2026-11-15'),
+    t('C', 'F', '2026-10-01'), t('D', 'F', '2026-10-02', 'sell'),
+  ]);
+  assert.equal(c.length, 1);
+  assert.deepEqual([c[0].ticker, c[0].filed, c[0].members], ['NVDA', '2026-10-20', ['A', 'B']]);
+});
+
+test('copying only fast reporters skips late buys', () => {
+  const abc = candles([10, 10, 10, 10, 10, 10, 10, 10, 10, 10]);
+  const trades = [
+    { member: 'A', ticker: 'ABC', type: 'buy', txDate: '2025-12-01', filed: '2026-01-06' },
+    { member: 'A', ticker: 'ABC', type: 'buy', txDate: '2026-01-05', filed: '2026-01-07' },
+  ];
+  const r = copyPortfolio(trades, (s) => (s === 'ABC' ? abc : null), { start: '2026-01-01', budget: 1000, maxLag: 15 });
+  assert.equal(r.fills.length, 1);
+  assert.equal(r.fills[0].lag, 2);
 });
